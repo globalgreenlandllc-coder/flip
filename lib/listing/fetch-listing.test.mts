@@ -130,3 +130,11 @@ test("prefill from the bookmark query string", async () => {
   assert.equal(p!.address, "8208 243rd Street Ct E, Graham, WA 98338");
   assert.equal(prefillFromParams({}), null);
 });
+
+test("dedupe prefers the larger variant even when the hash contains digits", () => {
+  const out = dedupePhotos([
+    "https://photos.zillowstatic.com/fp/042ded27b1d67494392badddd357a07e-cc_ft_960.jpg",
+    "https://photos.zillowstatic.com/fp/042ded27b1d67494392badddd357a07e-cc_ft_1536.jpg",
+  ]);
+  assert.deepEqual(out, ["https://photos.zillowstatic.com/fp/042ded27b1d67494392badddd357a07e-cc_ft_1536.jpg"]);
+});

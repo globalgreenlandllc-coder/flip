@@ -154,7 +154,9 @@ function photoKey(u: string): string {
 
 /** Largest number that looks like a pixel size in the filename; 0 if none. */
 function sizeHint(u: string): number {
-  const name = u.split("/").pop() ?? "";
+  // Drop a leading content hash (zillowstatic: "<32 hex>-variant.jpg") so its
+  // digit runs are not mistaken for pixel sizes.
+  const name = (u.split("/").pop() ?? "").replace(/^[0-9a-f]{32}-/i, "");
   const nums = (name.match(/\d{3,4}/g) ?? []).map(Number).filter((n) => n >= 200 && n <= 8000);
   return nums.length ? Math.max(...nums) : 0;
 }
