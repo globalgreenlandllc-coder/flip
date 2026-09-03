@@ -92,7 +92,7 @@ function Field(props: { label: string; value: string | number; onChange: (v: str
   );
 }
 
-function ReportView({ report }: { report: Report }) {
+export function ReportView({ report }: { report: Report }) {
   const { subject, arv, deal, riskFlags } = report;
   return (
     <section className="mt-8 space-y-8">

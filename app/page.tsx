@@ -1,4 +1,4 @@
-import { Evaluator } from "@/components/evaluator";
+import { Workspace } from "@/components/workspace";
 import { DEFAULT_DEAL_TERMS, DEFAULT_MARKET_CONFIG, evaluate } from "@/lib/engine";
 import { getProviders } from "@/lib/data";
 
@@ -30,8 +30,8 @@ export default async function Home() {
   return (
     <main className="mx-auto max-w-5xl px-6 py-10 font-sans">
       <h1 className="text-3xl font-semibold tracking-tight">flip</h1>
-      <p className="mt-1 text-neutral-500">Address in. GO / TIGHT / PASS out, with the numbers that back it up.</p>
-      <Evaluator initial={initial} initialWarning={warning} />
+      <p className="mt-1 text-neutral-500">Paste a listing, add the photos, get GO / TIGHT / PASS and what to remodel for the most profit.</p>
+      <Workspace initial={initial} initialWarning={warning} />
     </main>
   );
 }
