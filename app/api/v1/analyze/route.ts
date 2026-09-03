@@ -59,7 +59,7 @@ export async function POST(req: Request) {
   const photosUsed = { uploaded: Math.min(uploaded.length, MAX_PHOTOS), fromListing: Math.min(remote.length, Math.max(0, MAX_PHOTOS - uploaded.length)), failed: failed.length };
   if (photos.length === 0) {
     const error = listing && !listing.fetched
-      ? `${listing.host} would not let us read the page${listing.address ? ` for ${listing.address}` : ""}. Drag the photos from the listing gallery into the drop zone (or save and upload them), enter the asking price, and run it again.`
+      ? `${listing.host} would not let us read the page${listing.address ? ` for ${listing.address}` : ""}. On the listing page press ⌘A then ⌘C, paste into this form, and run it again. Or drag the gallery photos into the drop zone and enter the asking price.`
       : remoteUrls.length
         ? "None of the photo links could be fetched. Upload the photos instead."
         : "No photos. Upload the listing photos or pass photo URLs.";

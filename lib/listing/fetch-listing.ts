@@ -245,3 +245,25 @@ export async function fetchListing(url: string, timeoutMs = 8000): Promise<Listi
     clearTimeout(timer);
   }
 }
+
+/** Facts from free text (a copied listing page): price, beds, baths, sqft, address. */
+export function parseListingText(text: string): Pick<ListingInfo, "price" | "beds" | "baths" | "sqft" | "address"> {
+  const t = text.replace(/\s+/g, " ");
+  const price = num(t.match(/\$\s?([0-9]{3}(?:,[0-9]{3}){1,2})(?!\s*\/\s*(?:mo|month|sqft))/)?.[1]);
+  const beds = num(t.match(/([0-9]+(?:\.[0-9])?)\s*(?:bd|bds|beds?|bedrooms?)\b/i)?.[1]);
+  const baths = num(t.match(/([0-9]+(?:\.[0-9])?)\s*(?:ba|baths?|bathrooms?)\b/i)?.[1]);
+  const sqft = num(t.match(/([0-9]{1,2},?[0-9]{3})\s*(?:sq\.?\s?ft|sqft|square feet)\b/i)?.[1]);
+  const address = t.match(/\d+\s+[A-Za-z0-9 .'#-]+?,\s*[A-Za-z .'-]+,\s*[A-Z]{2}\s*\d{5}/)?.[0];
+  return { price, beds, baths, sqft, address };
+}
+
+/**
+ * A listing page copied from the browser (select all, copy) arrives as HTML
+ * plus plain text. Portals block server reads, but the user's own browser
+ * already has the page, so this is the reliable path for Zillow and Redfin.
+ */
+export function parsePastedListing(html: string, text: string, pageUrl?: string): Omit<ListingInfo, "url" | "host" | "fetched"> {
+  const facts = parseListingText(text || html.replace(/<[^>]+>/g, " "));
+  const photos = html ? extractPhotos(html, pageUrl ?? "https://pasted.invalid/") : [];
+  return { ...facts, address: facts.address ?? (pageUrl ? addressFromUrl(pageUrl) : undefined), photos };
+}

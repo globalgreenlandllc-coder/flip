@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addressFromUrl, dedupePhotos, parseListingHtml } from "./fetch-listing.ts";
+import { addressFromUrl, dedupePhotos, parseListingHtml, parseListingText, parsePastedListing } from "./fetch-listing.ts";
 
 test("parses Open Graph metadata from a listing page", () => {
   const html = `<html><head>
@@ -87,4 +87,30 @@ test("reads the address out of portal URLs", () => {
   assert.equal(addressFromUrl("https://www.redfin.com/WA/Graham/13013-224th-St-E-98338/home/12345"), "13013 224th St E, Graham, WA 98338");
   assert.equal(addressFromUrl("https://www.realtor.com/realestateandhomes-detail/13013-224th-St-E_Graham_WA_98338_M12345-67890"), "13013 224th St E, Graham, WA 98338");
   assert.equal(addressFromUrl("https://example.com/listing/1"), undefined);
+});
+
+test("parses a copied listing page: photos from the HTML, facts from the text", () => {
+  const html = `<div><h1>8208 243rd Street Ct E, Graham, WA 98338</h1><span>$589,000</span>
+    <img src="https://photos.zillowstatic.com/fp/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-cc_ft_960.jpg" srcset="https://photos.zillowstatic.com/fp/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-cc_ft_1536.jpg 1536w">
+    <img src="https://photos.zillowstatic.com/fp/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-uncropped_scaled_within_1536_1152.jpg">
+    <img src="https://www.zillowstatic.com/s3/pfs/static/logo.svg"></div>`;
+  const text = "8208 243rd Street Ct E, Graham, WA 98338 $589,000 3 beds 2 baths 1,650 sqft Est. payment $3,800/mo";
+  const info = parsePastedListing(html, text, "https://www.zillow.com/homedetails/8208-243rd-Street-Ct-E-Graham-WA-98338/1_zpid/");
+  assert.equal(info.address, "8208 243rd Street Ct E, Graham, WA 98338");
+  assert.equal(info.price, 589_000);
+  assert.equal(info.beds, 3);
+  assert.equal(info.baths, 2);
+  assert.equal(info.sqft, 1650);
+  assert.deepEqual(info.photos, [
+    "https://photos.zillowstatic.com/fp/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-cc_ft_1536.jpg",
+    "https://photos.zillowstatic.com/fp/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-uncropped_scaled_within_1536_1152.jpg",
+  ]);
+});
+
+test("parseListingText ignores monthly payment figures when picking the price", () => {
+  const f = parseListingText("Est. payment $3,800/mo. Listed at $749,950. 4 bd 3 ba 2,072 sqft");
+  assert.equal(f.price, 749_950);
+  assert.equal(f.beds, 4);
+  assert.equal(f.baths, 3);
+  assert.equal(f.sqft, 2072);
 });

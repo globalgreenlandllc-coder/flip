@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import type { Report } from "@/lib/engine/types";
 import type { RenovationPlan } from "@/lib/engine/renovation";
 import type { PhotoAssessment } from "@/lib/vision/schema";
-import type { ListingInfo } from "@/lib/listing/fetch-listing";
+import { parsePastedListing, type ListingInfo } from "@/lib/listing/fetch-listing";
 import { ReportView } from "@/components/report/report-view";
 import { PlanView } from "@/components/report/plan-view";
 import { AssessmentView, ListingCard } from "@/components/report/assessment-view";
@@ -44,6 +44,7 @@ export function Analyzer() {
   const [showLinks, setShowLinks] = useState(false);
   const [files, setFiles] = useState<{ file: File; url: string }[]>([]);
   const [askingPrice, setAskingPrice] = useState("");
+  const [pasted, setPasted] = useState<{ address?: string; beds?: number; baths?: number; sqft?: number; photos: number } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +66,16 @@ export function Analyzer() {
     setShowLinks(true);
     return true;
   }, []);
+
+  /** A whole listing page pasted from the browser: photos, price and facts. */
+  const addPastedPage = useCallback((html: string, text: string) => {
+    const info = parsePastedListing(html, text, listingUrl || undefined);
+    if (!info.photos.length && !info.price && !info.address) return false;
+    if (info.photos.length) addUrls(info.photos.join("\n"));
+    if (info.price) setAskingPrice((prev) => prev || String(info.price));
+    setPasted({ address: info.address, beds: info.beds, baths: info.baths, sqft: info.sqft, photos: info.photos.length });
+    return true;
+  }, [listingUrl, addUrls]);
 
   const removeFile = useCallback((index: number) => {
     setFiles((prev) => {
@@ -94,6 +105,9 @@ export function Analyzer() {
         body: JSON.stringify({
           listingUrl: listingUrl || undefined,
           photos: photos.length ? photos.slice(0, MAX_PHOTOS) : undefined,
+          subject: pasted && (pasted.sqft || pasted.beds || pasted.baths)
+            ? { ...(pasted.sqft ? { sqft: pasted.sqft } : {}), ...(pasted.beds ? { beds: pasted.beds } : {}), ...(pasted.baths ? { baths: pasted.baths } : {}) }
+            : undefined,
           deal: askingPrice ? { askingPrice: Number(askingPrice.replace(/[^0-9.]/g, "")) } : undefined,
         }),
       });
@@ -123,8 +137,12 @@ export function Analyzer() {
         onPaste={(e) => {
           const items = Array.from(e.clipboardData.files);
           if (items.length) { e.preventDefault(); addFiles(items); return; }
+          const html = e.clipboardData.getData("text/html");
+          const text = e.clipboardData.getData("text/plain");
+          // A copied listing page: has image tags. Handle it wherever it lands.
+          if (html && /<img\b/i.test(html)) { e.preventDefault(); addPastedPage(html, text); return; }
           const tag = (e.target as HTMLElement).tagName;
-          if (tag !== "INPUT" && tag !== "TEXTAREA" && addUrls(e.clipboardData.getData("text"))) e.preventDefault();
+          if (tag !== "INPUT" && tag !== "TEXTAREA" && addUrls(text)) e.preventDefault();
         }}
         className="card p-5 sm:p-6"
       >
@@ -139,7 +157,9 @@ export function Analyzer() {
                 value={listingUrl}
                 onChange={(e) => setListingUrl(e.target.value)}
               />
-              <p className="mt-1.5 text-xs text-ink-500">Reads the public page for the address, facts and photos. Zillow and Redfin often block that read, so add the photos below either way.</p>
+              <p className="mt-1.5 text-xs text-ink-500">
+                Zillow and Redfin usually block server reads. The reliable way: on the listing page press <kbd className="rounded border border-ink-300 bg-white px-1 font-mono text-[11px]">⌘A</kbd> then <kbd className="rounded border border-ink-300 bg-white px-1 font-mono text-[11px]">⌘C</kbd>, come back and paste anywhere in this form. The photos, price, beds, baths and square feet come along.
+              </p>
             </div>
 
             <div>
@@ -199,6 +219,15 @@ export function Analyzer() {
           </div>
 
           <div className="flex flex-col gap-4 lg:border-l lg:border-ink-100 lg:pl-5">
+            {pasted && (
+              <p className="rounded-lg border border-brand-200 bg-brand-50 p-3 text-xs text-brand-700">
+                Read from your paste: {pasted.photos} photo{pasted.photos === 1 ? "" : "s"}
+                {pasted.address ? ` · ${pasted.address}` : ""}
+                {pasted.beds ? ` · ${pasted.beds} bd` : ""}
+                {pasted.baths ? ` · ${pasted.baths} ba` : ""}
+                {pasted.sqft ? ` · ${pasted.sqft.toLocaleString()} sqft` : ""}
+              </p>
+            )}
             <div>
               <label className="label" htmlFor="asking">Asking price</label>
               <input id="asking" className="input" placeholder="from listing if readable" inputMode="numeric" value={askingPrice} onChange={(e) => setAskingPrice(e.target.value)} />
