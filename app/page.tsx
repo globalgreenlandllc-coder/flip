@@ -1,7 +1,12 @@
 import Link from "next/link";
+import Image from "next/image";
 import { auth } from "@clerk/nextjs/server";
 import { Logo } from "@/components/ui/logo";
 import { VerdictBadge } from "@/components/ui/verdict";
+import { HeroCard } from "@/components/landing/hero-card";
+import { Showcase } from "@/components/landing/showcase";
+import { PhotoRead } from "@/components/landing/photo-read";
+import { PHOTOS } from "@/components/landing/photos";
 
 const QUESTIONS = [
   { q: "What's the ceiling here?", a: "The top of this block's market. No finish level pushes a house past it, and most flippers lose money by ignoring it." },
@@ -12,9 +17,9 @@ const QUESTIONS = [
 ];
 
 const STEPS = [
-  { n: "1", t: "Paste the listing", d: "Drop in the link and the photos. Add the asking price if the page won't give it up." },
-  { n: "2", t: "flip runs the numbers", d: "Comps, ceiling, photo assessment, remodel plan and deal math, in about a minute." },
-  { n: "3", t: "Read the verdict", d: "GO, TIGHT or PASS with the one number that decided it, and a report you can hand to a partner or lender." },
+  { n: "1", t: "Paste the listing", d: "Drop in the link and the photos. Add the asking price if the page won't give it up.", icon: "M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" },
+  { n: "2", t: "flip runs the numbers", d: "Comps, ceiling, photo assessment, remodel plan and deal math, in about a minute.", icon: "M4 19h16M6 16l4-5 3 3 5-7M17 7h2v2" },
+  { n: "3", t: "Read the verdict", d: "GO, TIGHT or PASS with the one number that decided it, and a report you can hand to a partner or lender.", icon: "M9 12l2 2 4-4M12 3l7 4v5c0 5-3.5 8-7 9-3.5-1-7-4-7-9V7l7-4z" },
 ];
 
 const AUDIENCES = [
@@ -33,22 +38,22 @@ const FAQ = [
 
 function Nav({ signedIn }: { signedIn: boolean }) {
   return (
-    <header className="sticky top-0 z-20 border-b border-ink-200/70 bg-canvas/80 backdrop-blur">
+    <header className="sticky top-0 z-20 border-b border-ink-200/70 bg-canvas/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
         <Logo />
         <nav className="hidden items-center gap-8 text-sm font-medium text-ink-700 md:flex">
-          <a href="#report" className="hover:text-ink-950">The report</a>
-          <a href="#how" className="hover:text-ink-950">How it works</a>
-          <a href="#ceiling" className="hover:text-ink-950">The ceiling</a>
-          <a href="#pricing" className="hover:text-ink-950">Pricing</a>
-          <a href="#faq" className="hover:text-ink-950">FAQ</a>
+          <a href="#report" className="transition-colors hover:text-ink-950">The report</a>
+          <a href="#how" className="transition-colors hover:text-ink-950">How it works</a>
+          <a href="#ceiling" className="transition-colors hover:text-ink-950">The ceiling</a>
+          <a href="#pricing" className="transition-colors hover:text-ink-950">Pricing</a>
+          <a href="#faq" className="transition-colors hover:text-ink-950">FAQ</a>
         </nav>
         <div className="flex items-center gap-3">
           {signedIn ? (
             <Link href="/app" className="btn-primary text-sm">Open the app</Link>
           ) : (
             <>
-              <Link href="/sign-in" className="hidden text-sm font-medium text-ink-700 hover:text-ink-950 sm:block">Sign in</Link>
+              <Link href="/sign-in" className="hidden text-sm font-medium text-ink-700 transition-colors hover:text-ink-950 sm:block">Sign in</Link>
               <Link href="/sign-up" className="btn-primary text-sm">Get started</Link>
             </>
           )}
@@ -64,49 +69,9 @@ function Check() {
   );
 }
 
-function SampleReport() {
+function Icon({ d, className = "h-6 w-6" }: { d: string; className?: string }) {
   return (
-    <div className="relative">
-      <div aria-hidden className="absolute -inset-6 -z-10 rounded-[2rem] bg-[radial-gradient(60%_60%_at_30%_20%,rgb(16_185_129/0.22),transparent_70%),radial-gradient(50%_50%_at_90%_90%,rgb(217_119_6/0.16),transparent_70%)] blur-2xl" />
-      <div className="card overflow-hidden p-5 shadow-[0_40px_90px_-40px_rgb(11_18_32/0.45)]">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">Sample report</div>
-            <div className="mt-0.5 font-semibold">1,840 sqft · 3 bd / 2 ba · built 1952</div>
-          </div>
-          <VerdictBadge verdict="GO" />
-        </div>
-        <p className="mt-3 text-sm leading-relaxed text-ink-700">Asking is $40,000 under your max offer and the deal survives ARV −10% with rehab +20%.</p>
-        <div className="mt-4 grid grid-cols-3 gap-2.5 text-sm">
-          {[["ARV", "$1,088,000"], ["Max offer", "$789,000"], ["Profit", "$103,500"]].map(([k, v]) => (
-            <div key={k} className="rounded-lg bg-ink-100/70 p-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-500">{k}</div>
-              <div className="mt-0.5 font-semibold tabular-nums">{v}</div>
-            </div>
-          ))}
-        </div>
-        <div className="mt-4">
-          <div className="flex justify-between text-xs text-ink-500"><span>ARV vs. neighborhood ceiling</span><span className="tabular-nums">96%</span></div>
-          <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-ink-100">
-            <div className="h-full w-[96%] rounded-full bg-gradient-to-r from-brand-500 to-brand-600" />
-          </div>
-          <p className="mt-1.5 text-xs text-ink-500">Within 4% of the ceiling. Premium finishes will not be repaid here.</p>
-        </div>
-        <div className="mt-4 space-y-1.5 text-sm">
-          {[["REPLACE", "Kitchen", "+$29,100", "bg-brand-100 text-brand-700"], ["REFRESH", "Flooring", "+$18,300", "bg-brand-50 text-brand-700"], ["REQUIRED", "Plumbing", "$0", "bg-red-100 text-red-800"], ["SKIP", "Windows", "won't come back", "bg-ink-100 text-ink-500"]].map(([a, i, n, c]) => (
-            <div key={i} className="flex items-center gap-3">
-              <span className={`w-[4.5rem] rounded px-1.5 py-0.5 text-center text-[10px] font-semibold ${c}`}>{a}</span>
-              <span className="flex-1">{i}</span>
-              <span className="tabular-nums text-ink-700">{n}</span>
-            </div>
-          ))}
-        </div>
-        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-amber-800">From the photos</div>
-          <p className="mt-1 leading-snug text-amber-900">Bath gutted to the studs, staining at the tub wall. Budget for subfloor repair; verify plumbing before closing.</p>
-        </div>
-      </div>
-    </div>
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={d} /></svg>
   );
 }
 
@@ -157,6 +122,7 @@ export default async function Landing() {
   const { userId } = await auth();
   const signedIn = Boolean(userId);
   const primaryHref = signedIn ? "/app" : "/sign-up";
+  const primaryLabel = signedIn ? "Open the app" : "Analyze your first house free";
 
   return (
     <div className="flex-1">
@@ -165,55 +131,64 @@ export default async function Landing() {
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div aria-hidden className="absolute inset-0 -z-10 bg-[radial-gradient(rgb(11_18_32/0.07)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:radial-gradient(70%_60%_at_50%_0%,#000,transparent)]" />
-        <div className="mx-auto grid max-w-6xl items-center gap-14 px-6 pb-24 pt-16 lg:grid-cols-[1.05fr_0.95fr] lg:pt-24">
+        <div className="mx-auto grid max-w-6xl items-center gap-14 px-6 pb-24 pt-16 lg:grid-cols-[0.95fr_1.05fr] lg:gap-16 lg:pt-24">
           <div>
-            <span className="inline-flex items-center gap-2 rounded-full border border-ink-200 bg-white px-3 py-1 text-xs font-medium text-ink-700">
+            <span className="fade-up inline-flex items-center gap-2 rounded-full border border-ink-200 bg-white px-3 py-1 text-xs font-medium text-ink-700">
               <span className="h-1.5 w-1.5 rounded-full bg-brand-500" /> Built for flippers, contractors and their lenders
             </span>
-            <h1 className="mt-5 text-5xl font-bold leading-[1.02] tracking-tight text-ink-950 sm:text-6xl">
+            <h1 className="fade-up mt-6 text-5xl font-bold leading-[1.02] tracking-tight text-ink-950 sm:text-6xl lg:text-[4.25rem]" style={{ animationDelay: "60ms" }}>
               Know it&apos;s a good flip <span className="text-ink-400">before</span> you offer.
             </h1>
-            <p className="mt-6 max-w-xl text-lg leading-relaxed text-ink-700">
+            <p className="fade-up mt-6 max-w-xl text-lg leading-relaxed text-ink-700" style={{ animationDelay: "120ms" }}>
               Paste the listing, add the photos. flip tells you GO, TIGHT or PASS, what the house will sell for, what the block will actually pay for, and what to remodel for the most profit.
             </p>
-            <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link href={primaryHref} className="btn-primary">{signedIn ? "Open the app" : "Analyze your first house free"}</Link>
-              <a href="#report" className="btn-secondary">See a report</a>
+            <div className="fade-up mt-8 flex flex-wrap items-center gap-3" style={{ animationDelay: "180ms" }}>
+              <Link href={primaryHref} className="btn-primary px-5 py-3">{primaryLabel}</Link>
+              <a href="#report" className="btn-secondary px-5 py-3">See a report</a>
             </div>
-            <p className="mt-4 text-xs text-ink-500">No card. Free during beta.</p>
-            <div className="mt-10 flex flex-wrap gap-x-8 gap-y-3 text-sm text-ink-700">
-              <span className="flex items-center gap-2"><VerdictBadge verdict="GO" size="sm" /> the money works, even at ARV −10%</span>
-              <span className="flex items-center gap-2"><VerdictBadge verdict="TIGHT" size="sm" /> works at asking, not at your target</span>
-              <span className="flex items-center gap-2"><VerdictBadge verdict="PASS" size="sm" /> you would lose money</span>
+            <p className="fade-up mt-4 text-xs text-ink-500" style={{ animationDelay: "220ms" }}>No card. Free during beta. About a minute per house.</p>
+            <div className="fade-up mt-10 grid gap-2 text-sm text-ink-700 sm:grid-cols-3 lg:grid-cols-1" style={{ animationDelay: "260ms" }}>
+              {([["GO", "the money works, even at ARV −10%"], ["TIGHT", "works at asking, not at your target"], ["PASS", "you would lose money"]] as const).map(([v, t]) => (
+                <div key={v} className="flex items-center gap-2.5 rounded-xl border border-ink-200/70 bg-white/70 px-3 py-2">
+                  <VerdictBadge verdict={v} size="sm" />
+                  <span className="text-[13px] leading-snug">{t}</span>
+                </div>
+              ))}
             </div>
           </div>
-          <SampleReport />
+          <HeroCard />
         </div>
       </section>
 
+      <Showcase />
+
       {/* Five questions */}
-      <section className="border-y border-ink-200/70 bg-white">
-        <div className="mx-auto max-w-6xl px-6 py-20">
-          <h2 className="text-3xl font-bold tracking-tight">Five questions, answered on every house</h2>
-          <p className="mt-2 max-w-2xl text-ink-700">A flip goes wrong when one of these is guessed. flip answers all five with the work shown.</p>
-          <div className="mt-10 grid gap-8 md:grid-cols-2 lg:grid-cols-5">
-            {QUESTIONS.map((x, i) => (
-              <div key={x.q} className="border-t-2 border-ink-950 pt-4">
-                <div className="text-sm font-semibold text-brand-600">0{i + 1}</div>
+      <section className="mx-auto max-w-6xl px-6 py-24">
+        <div className="max-w-2xl">
+          <div className="eyebrow">The method</div>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Five questions, answered on every house</h2>
+          <p className="mt-3 leading-relaxed text-ink-700">A flip goes wrong when one of these is guessed. flip answers all five with the work shown.</p>
+        </div>
+        <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+          {QUESTIONS.map((x, i) => (
+            <div key={x.q} className="relative overflow-hidden rounded-2xl border border-ink-200 bg-white p-5">
+              <div aria-hidden className="absolute -right-2 -top-4 text-7xl font-bold tracking-tighter text-ink-100 select-none">0{i + 1}</div>
+              <div className="relative">
+                <div className="text-xs font-semibold text-brand-600">Question {i + 1}</div>
                 <h3 className="mt-2 font-semibold leading-snug">{x.q}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-ink-700">{x.a}</p>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       </section>
 
       {/* The report */}
-      <section id="report" className="mx-auto max-w-6xl px-6 py-24">
-        <div className="grid gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
+      <section id="report" className="border-y border-ink-200/70 bg-white">
+        <div className="mx-auto grid max-w-6xl gap-12 px-6 py-24 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
           <div className="lg:sticky lg:top-24">
-            <div className="text-sm font-semibold text-brand-600">The report</div>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight">Every number, with the work shown</h2>
+            <div className="eyebrow">The report</div>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Every number, with the work shown</h2>
             <p className="mt-4 leading-relaxed text-ink-700">A verdict you cannot check is a guess with a font. Every report opens to the comps, the adjustments, the ceiling, the plan and the stress test, so a partner or a lender can argue with the inputs instead of the conclusion.</p>
             <ul className="mt-6 space-y-3 text-sm text-ink-700">
               {["Verdict and the one number that decided it", "ARV range with confidence, and every comp with every adjustment", "Neighborhood ceiling and where this house lands against it", "Room-by-room condition from the photos, with what to keep", "Remodel plan ranked by profit, with skips explained", "Max allowable offer at your target profit", "Sensitivity: ARV down 10%, rehab up 20%, still profitable?", "Risk flags: age, systems, and what photos cannot show"].map((t) => (
@@ -225,27 +200,33 @@ export default async function Landing() {
         </div>
       </section>
 
+      <PhotoRead />
+
       {/* How it works */}
-      <section id="how" className="border-y border-ink-200/70 bg-white">
-        <div className="mx-auto max-w-6xl px-6 py-20">
-          <h2 className="text-3xl font-bold tracking-tight">How it works</h2>
-          <div className="mt-10 grid gap-6 md:grid-cols-3">
-            {STEPS.map((s) => (
-              <div key={s.n} className="rounded-2xl border border-ink-200 bg-canvas p-6">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-ink-950 text-sm font-bold text-white">{s.n}</div>
-                <h3 className="mt-4 font-semibold">{s.t}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-ink-700">{s.d}</p>
-              </div>
-            ))}
-          </div>
+      <section id="how" className="mx-auto max-w-6xl px-6 py-24">
+        <div className="max-w-2xl">
+          <div className="eyebrow">How it works</div>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">A listing in, a decision out.</h2>
         </div>
+        <ol className="mt-12 grid gap-5 md:grid-cols-3">
+          {STEPS.map((s) => (
+            <li key={s.n} className="relative rounded-2xl border border-ink-200 bg-white p-6">
+              <div className="flex items-center justify-between">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-ink-950 text-white"><Icon d={s.icon} /></div>
+                <span className="text-sm font-semibold text-ink-400">Step {s.n}</span>
+              </div>
+              <h3 className="mt-5 text-lg font-semibold">{s.t}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-ink-700">{s.d}</p>
+            </li>
+          ))}
+        </ol>
       </section>
 
       {/* Ceiling */}
       <section id="ceiling" className="bg-ink-950 text-white">
         <div className="mx-auto grid max-w-6xl gap-12 px-6 py-24 lg:grid-cols-2 lg:items-center">
           <div>
-            <div className="text-sm font-semibold text-brand-500">The number most calculators skip</div>
+            <div className="eyebrow !text-brand-500">The number most calculators skip</div>
             <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Every block has a ceiling. flip finds it.</h2>
             <p className="mt-5 leading-relaxed text-white/75">
               We take every renovated sale in the neighborhood over the last year and find the price per square foot the top decile clears. If the comp math says $700k but the block has never cleared $640k, the report says $640k, and tells you not to put a $60k kitchen in a house that will not pay for it.
@@ -272,12 +253,15 @@ export default async function Landing() {
 
       {/* Who it's for */}
       <section className="mx-auto max-w-6xl px-6 py-24">
-        <h2 className="text-3xl font-bold tracking-tight">Built for the people who put money into houses</h2>
-        <div className="mt-10 grid gap-6 md:grid-cols-3">
+        <div className="max-w-2xl">
+          <div className="eyebrow">Who it&apos;s for</div>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Built for the people who put money into houses</h2>
+        </div>
+        <div className="mt-12 grid gap-5 md:grid-cols-3">
           {AUDIENCES.map((a) => (
             <div key={a.t} className="card p-6">
-              <svg className="h-7 w-7 text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={a.icon} /></svg>
-              <h3 className="mt-4 text-lg font-semibold">{a.t}</h3>
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-700"><Icon d={a.icon} /></div>
+              <h3 className="mt-5 text-lg font-semibold">{a.t}</h3>
               <p className="mt-2 text-sm leading-relaxed text-ink-700">{a.d}</p>
             </div>
           ))}
@@ -287,25 +271,27 @@ export default async function Landing() {
       {/* Pricing */}
       <section id="pricing" className="border-y border-ink-200/70 bg-white">
         <div className="mx-auto max-w-6xl px-6 py-24">
-          <h2 className="text-3xl font-bold tracking-tight">Pricing</h2>
-          <p className="mt-2 text-ink-700">One good decision pays for a year.</p>
-          <div className="mt-10 grid gap-6 md:grid-cols-3">
+          <div className="max-w-2xl">
+            <div className="eyebrow">Pricing</div>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">One good decision pays for a year.</h2>
+          </div>
+          <div className="mt-12 grid gap-5 md:grid-cols-3">
             {[
               { name: "Starter", price: "Free", period: "during beta", d: "For your first deals.", items: ["Full reports with comps and remodel plan", "Saved deals", "Photo assessment"], cta: "Start free", featured: false, href: primaryHref },
               { name: "Pro", price: "$149", period: "per month", d: "For contractors and investors who run deals every week.", items: ["Unlimited analyses", "PDF reports with your logo", "Editable assumptions per deal", "Priority support"], cta: "Start free", featured: true, href: primaryHref },
               { name: "Team & API", price: "Talk to us", period: "", d: "For brokerages, lenders and platforms.", items: ["Score every listing over the API", "White-label reports", "Seats and shared deals", "Accuracy report for your metro"], cta: "Contact", featured: false, href: "mailto:hello@example.com" },
             ].map((t) => (
-              <div key={t.name} className={`flex flex-col rounded-2xl border bg-canvas p-6 ${t.featured ? "border-ink-950 ring-1 ring-ink-950" : "border-ink-200"}`}>
+              <div key={t.name} className={`flex flex-col rounded-2xl border p-6 ${t.featured ? "border-ink-950 bg-ink-950 text-white shadow-[0_30px_60px_-30px_rgb(11_18_32/0.6)]" : "border-ink-200 bg-canvas"}`}>
                 <div className="flex items-baseline justify-between">
                   <h3 className="font-semibold">{t.name}</h3>
-                  {t.featured && <span className="rounded-full bg-ink-950 px-2 py-0.5 text-[11px] font-semibold text-white">Most popular</span>}
+                  {t.featured && <span className="rounded-full bg-brand-500 px-2 py-0.5 text-[11px] font-semibold text-white">Most popular</span>}
                 </div>
-                <div className="mt-4 text-3xl font-bold tracking-tight">{t.price} <span className="text-sm font-normal text-ink-500">{t.period}</span></div>
-                <p className="mt-2 text-sm text-ink-700">{t.d}</p>
+                <div className="mt-4 text-3xl font-bold tracking-tight">{t.price} <span className={`text-sm font-normal ${t.featured ? "text-white/60" : "text-ink-500"}`}>{t.period}</span></div>
+                <p className={`mt-2 text-sm ${t.featured ? "text-white/75" : "text-ink-700"}`}>{t.d}</p>
                 <ul className="mt-5 space-y-2 text-sm">
                   {t.items.map((i) => <li key={i} className="flex gap-2.5"><Check />{i}</li>)}
                 </ul>
-                <Link href={t.href} className={`mt-6 ${t.featured ? "btn-primary" : "btn-secondary"}`}>{t.cta}</Link>
+                <Link href={t.href} className={`mt-6 ${t.featured ? "inline-flex items-center justify-center rounded-[0.625rem] bg-white px-4 py-2.5 font-semibold text-ink-950 transition-colors hover:bg-brand-50" : "btn-secondary"}`}>{t.cta}</Link>
               </div>
             ))}
           </div>
@@ -314,7 +300,8 @@ export default async function Landing() {
 
       {/* FAQ */}
       <section id="faq" className="mx-auto max-w-3xl px-6 py-24">
-        <h2 className="text-3xl font-bold tracking-tight">Questions</h2>
+        <div className="eyebrow">FAQ</div>
+        <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Questions</h2>
         <div className="mt-8 divide-y divide-ink-200 border-y border-ink-200">
           {FAQ.map((f) => (
             <details key={f.q} className="group py-4">
@@ -330,11 +317,21 @@ export default async function Landing() {
 
       {/* CTA */}
       <section className="mx-auto max-w-6xl px-6 pb-24">
-        <div className="relative overflow-hidden rounded-3xl bg-ink-950 px-8 py-14 text-center text-white">
-          <div aria-hidden className="absolute inset-0 bg-[radial-gradient(50%_80%_at_50%_0%,rgb(16_185_129/0.25),transparent_70%)]" />
-          <h2 className="relative text-3xl font-bold tracking-tight sm:text-4xl">Run your next house through flip.</h2>
-          <p className="relative mx-auto mt-3 max-w-xl text-white/75">The report takes about a minute. The mistake it prevents takes months.</p>
-          <Link href={primaryHref} className="relative mt-8 inline-flex items-center justify-center rounded-xl bg-white px-5 py-3 font-semibold text-ink-950 transition-colors hover:bg-brand-50">{signedIn ? "Open the app" : "Analyze your first house free"}</Link>
+        <div className="relative overflow-hidden rounded-3xl bg-ink-950 px-8 py-20 text-center text-white sm:py-24">
+          <Image
+            src={PHOTOS.modernDusk}
+            alt=""
+            fill
+            placeholder="blur"
+            sizes="(min-width: 1152px) 1104px, 100vw"
+            className="object-cover opacity-70"
+          />
+          <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-ink-950/95 via-ink-950/60 to-ink-950/20" />
+          <div className="relative">
+            <h2 className="text-3xl font-bold tracking-tight sm:text-5xl">Run your next house through flip.</h2>
+            <p className="mx-auto mt-4 max-w-xl text-white/80">The report takes about a minute. The mistake it prevents takes months.</p>
+            <Link href={primaryHref} className="mt-8 inline-flex items-center justify-center rounded-xl bg-white px-6 py-3 font-semibold text-ink-950 transition-colors hover:bg-brand-50">{primaryLabel}</Link>
+          </div>
         </div>
       </section>
 
