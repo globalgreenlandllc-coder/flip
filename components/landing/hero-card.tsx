@@ -1,11 +1,13 @@
 import Image from "next/image";
 import { VerdictBadge } from "@/components/ui/verdict";
 import { PHOTOS } from "./photos";
+import { HERO_DEAL, money, runSample } from "./samples";
 
 /**
  * The hero visual: a real listing photo with flip's read laid over it
  * (verdict, photo callouts, asking vs. max offer), then the numbers that
- * decided it. Everything here is a sample, labelled as such.
+ * decided it. The deal numbers come from the engine (see samples.ts); the
+ * photo callouts and remodel lines are illustrative.
  */
 
 const CALLOUTS: { label: string; note: string; tone: "keep" | "refresh"; left: string; top: string; delay: number }[] = [
@@ -26,6 +28,7 @@ function Corner({ className }: { className: string }) {
 }
 
 export function HeroCard() {
+  const d = runSample(HERO_DEAL);
   return (
     <div className="fade-up relative" style={{ animationDelay: "180ms" }}>
       <div
@@ -57,7 +60,7 @@ export function HeroCard() {
           </div>
           <div className="pop-in absolute right-7 top-6" style={{ animationDelay: "1500ms" }}>
             <span className="inline-block rounded-xl bg-white/15 p-1 backdrop-blur">
-              <VerdictBadge verdict="GO" size="lg" />
+              <VerdictBadge verdict={d.verdict} size="lg" />
             </span>
           </div>
 
@@ -76,21 +79,21 @@ export function HeroCard() {
           <div className="absolute inset-x-7 bottom-6 flex items-end justify-between text-white">
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-wider text-white/70">Asking</div>
-              <div className="text-2xl font-bold tabular-nums tracking-tight">$749,000</div>
+              <div className="text-2xl font-bold tabular-nums tracking-tight">{money(d.purchasePrice)}</div>
             </div>
             <div className="text-right">
               <div className="text-[10px] font-semibold uppercase tracking-wider text-white/70">Your max offer</div>
-              <div className="text-2xl font-bold tabular-nums tracking-tight text-brand-200">$789,000</div>
+              <div className="text-2xl font-bold tabular-nums tracking-tight text-brand-200">{money(d.maxAllowableOffer)}</div>
             </div>
           </div>
         </div>
 
         <div className="p-5">
           <p className="text-sm leading-relaxed text-ink-700">
-            Asking is <span className="font-semibold text-ink-950">$40,000 under your max offer</span> and the deal survives ARV −10% with rehab +20%.
+            <span className="font-semibold text-ink-950">Asking is {money(d.askingVsMao)} under your max offer</span> and the deal survives ARV −10% with rehab +20%.
           </p>
           <div className="mt-4 grid grid-cols-3 gap-2.5 text-sm">
-            {[["ARV", "$1,088,000"], ["Rehab", "$86,300"], ["Profit", "$103,500"]].map(([k, v]) => (
+            {[["ARV", money(d.arv)], ["Rehab + reserve", money(d.rehabWithReserve)], ["Profit", money(d.profit)]].map(([k, v]) => (
               <div key={k} className="rounded-xl bg-ink-100/70 p-3">
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-500">{k}</div>
                 <div className="mt-0.5 font-semibold tabular-nums">{v}</div>

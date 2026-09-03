@@ -7,6 +7,8 @@ import { HeroCard } from "@/components/landing/hero-card";
 import { Showcase } from "@/components/landing/showcase";
 import { PhotoRead } from "@/components/landing/photo-read";
 import { PHOTOS } from "@/components/landing/photos";
+import { StressTest } from "@/components/landing/stress-test";
+import { Reveal } from "@/components/landing/reveal";
 
 const QUESTIONS = [
   { q: "What's the ceiling here?", a: "The top of this block's market. No finish level pushes a house past it, and most flippers lose money by ignoring it." },
@@ -36,17 +38,24 @@ const FAQ = [
   { q: "Who can see my deals?", a: "Only you, and anyone you share a report with. Photos are analyzed and not used for anything else." },
 ];
 
+const NAV_LINKS = [
+  ["#report", "The report"],
+  ["#stress", "Stress test"],
+  ["#how", "How it works"],
+  ["#ceiling", "The ceiling"],
+  ["#pricing", "Pricing"],
+  ["#faq", "FAQ"],
+] as const;
+
 function Nav({ signedIn }: { signedIn: boolean }) {
   return (
     <header className="sticky top-0 z-20 border-b border-ink-200/70 bg-canvas/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
         <Logo />
-        <nav className="hidden items-center gap-8 text-sm font-medium text-ink-700 md:flex">
-          <a href="#report" className="transition-colors hover:text-ink-950">The report</a>
-          <a href="#how" className="transition-colors hover:text-ink-950">How it works</a>
-          <a href="#ceiling" className="transition-colors hover:text-ink-950">The ceiling</a>
-          <a href="#pricing" className="transition-colors hover:text-ink-950">Pricing</a>
-          <a href="#faq" className="transition-colors hover:text-ink-950">FAQ</a>
+        <nav className="hidden items-center gap-7 text-sm font-medium text-ink-700 md:flex">
+          {NAV_LINKS.map(([href, label]) => (
+            <a key={href} href={href} className="transition-colors hover:text-ink-950">{label}</a>
+          ))}
         </nav>
         <div className="flex items-center gap-3">
           {signedIn ? (
@@ -57,6 +66,18 @@ function Nav({ signedIn }: { signedIn: boolean }) {
               <Link href="/sign-up" className="btn-primary text-sm">Get started</Link>
             </>
           )}
+          <details className="mnav relative md:hidden">
+            <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-lg border border-ink-200 bg-white text-ink-900" aria-label="Menu">
+              <svg className="mnav-open h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+              <svg className="mnav-close h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M6 6l12 12M18 6 6 18" /></svg>
+            </summary>
+            <nav className="absolute right-0 top-11 w-56 rounded-2xl border border-ink-200 bg-white p-2 text-sm font-medium text-ink-900 shadow-[0_24px_60px_-24px_rgb(11_18_32/0.4)]">
+              {NAV_LINKS.map(([href, label]) => (
+                <a key={href} href={href} className="block rounded-lg px-3 py-2 hover:bg-ink-100">{label}</a>
+              ))}
+              {!signedIn && <Link href="/sign-in" className="block rounded-lg px-3 py-2 hover:bg-ink-100 sm:hidden">Sign in</Link>}
+            </nav>
+          </details>
         </div>
       </div>
     </header>
@@ -169,7 +190,7 @@ export default async function Landing() {
           <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Five questions, answered on every house</h2>
           <p className="mt-3 leading-relaxed text-ink-700">A flip goes wrong when one of these is guessed. flip answers all five with the work shown.</p>
         </div>
-        <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+        <Reveal className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
           {QUESTIONS.map((x, i) => (
             <div key={x.q} className="relative overflow-hidden rounded-2xl border border-ink-200 bg-white p-5">
               <div aria-hidden className="absolute -right-2 -top-4 text-7xl font-bold tracking-tighter text-ink-100 select-none">0{i + 1}</div>
@@ -180,7 +201,7 @@ export default async function Landing() {
               </div>
             </div>
           ))}
-        </div>
+        </Reveal>
       </section>
 
       {/* The report */}
@@ -208,7 +229,7 @@ export default async function Landing() {
           <div className="eyebrow">How it works</div>
           <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">A listing in, a decision out.</h2>
         </div>
-        <ol className="mt-12 grid gap-5 md:grid-cols-3">
+        <Reveal><ol className="mt-12 grid gap-5 md:grid-cols-3">
           {STEPS.map((s) => (
             <li key={s.n} className="relative rounded-2xl border border-ink-200 bg-white p-6">
               <div className="flex items-center justify-between">
@@ -219,7 +240,7 @@ export default async function Landing() {
               <p className="mt-2 text-sm leading-relaxed text-ink-700">{s.d}</p>
             </li>
           ))}
-        </ol>
+        </ol></Reveal>
       </section>
 
       {/* Ceiling */}
@@ -251,13 +272,29 @@ export default async function Landing() {
         </div>
       </section>
 
+      {/* Stress test */}
+      <section id="stress" className="border-b border-ink-200/70 bg-white">
+        <div className="mx-auto max-w-6xl px-6 py-24">
+          <div className="max-w-2xl">
+            <div className="eyebrow">Try the math</div>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Move the numbers. Watch the verdict.</h2>
+            <p className="mt-3 leading-relaxed text-ink-700">
+              This is the same deal math the report runs, live. Drag the asking price up and watch GO turn TIGHT, then PASS. In the app the comps set the ARV and the photos set the rehab; here you play both.
+            </p>
+          </div>
+          <div className="mt-12">
+            <StressTest />
+          </div>
+        </div>
+      </section>
+
       {/* Who it's for */}
       <section className="mx-auto max-w-6xl px-6 py-24">
         <div className="max-w-2xl">
           <div className="eyebrow">Who it&apos;s for</div>
           <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Built for the people who put money into houses</h2>
         </div>
-        <div className="mt-12 grid gap-5 md:grid-cols-3">
+        <Reveal className="mt-12 grid gap-5 md:grid-cols-3">
           {AUDIENCES.map((a) => (
             <div key={a.t} className="card p-6">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-700"><Icon d={a.icon} /></div>
@@ -265,7 +302,7 @@ export default async function Landing() {
               <p className="mt-2 text-sm leading-relaxed text-ink-700">{a.d}</p>
             </div>
           ))}
-        </div>
+        </Reveal>
       </section>
 
       {/* Pricing */}
@@ -275,7 +312,7 @@ export default async function Landing() {
             <div className="eyebrow">Pricing</div>
             <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">One good decision pays for a year.</h2>
           </div>
-          <div className="mt-12 grid gap-5 md:grid-cols-3">
+          <Reveal className="mt-12 grid gap-5 md:grid-cols-3">
             {[
               { name: "Starter", price: "Free", period: "during beta", d: "For your first deals.", items: ["Full reports with comps and remodel plan", "Saved deals", "Photo assessment"], cta: "Start free", featured: false, href: primaryHref },
               { name: "Pro", price: "$149", period: "per month", d: "For contractors and investors who run deals every week.", items: ["Unlimited analyses", "PDF reports with your logo", "Editable assumptions per deal", "Priority support"], cta: "Start free", featured: true, href: primaryHref },
@@ -294,7 +331,7 @@ export default async function Landing() {
                 <Link href={t.href} className={`mt-6 ${t.featured ? "inline-flex items-center justify-center rounded-[0.625rem] bg-white px-4 py-2.5 font-semibold text-ink-950 transition-colors hover:bg-brand-50" : "btn-secondary"}`}>{t.cta}</Link>
               </div>
             ))}
-          </div>
+          </Reveal>
         </div>
       </section>
 
