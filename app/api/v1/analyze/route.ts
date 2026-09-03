@@ -6,6 +6,7 @@ import { getProviders } from "@/lib/data";
 import { analyzePhotos, MAX_PHOTOS, type PhotoInput } from "@/lib/vision/analyze-photos";
 import { fetchPhotos } from "@/lib/vision/fetch-photo";
 import { fetchListing, type ListingInfo } from "@/lib/listing/fetch-listing";
+import { addressForBlocked, resolveByAddress } from "@/lib/listing/resolve";
 
 export const maxDuration = 120;
 
@@ -61,6 +62,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "`listingUrl` is not a valid URL." }, { status: 400 });
     }
     listing = await fetchListing(body.listingUrl);
+    // Portal blocked the server: read the same MLS listing from a site that serves it.
+    if (!listing.fetched) {
+      const address = addressForBlocked(listing);
+      const alt = address ? await resolveByAddress(address, listing.host) : null;
+      if (alt) {
+        listing = { ...alt, url: listing.url, host: listing.host, fetched: true, note: alt.readFrom.reason };
+      }
+    }
   }
 
   // Uploaded photos first, then everything the listing page exposes, then

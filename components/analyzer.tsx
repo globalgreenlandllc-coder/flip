@@ -8,7 +8,6 @@ import { parseFetchedListing, parsePastedListing, type ListingInfo } from "@/lib
 import { detectExtension, fetchViaExtension } from "@/lib/listing/extension";
 import Link from "next/link";
 import type { Prefill } from "@/lib/listing/prefill";
-import { Bookmarklet } from "@/components/app/bookmarklet";
 import { ReportView } from "@/components/report/report-view";
 import { PlanView } from "@/components/report/plan-view";
 import { AssessmentView, ListingCard } from "@/components/report/assessment-view";
@@ -102,6 +101,12 @@ export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
 
   async function run(e: React.FormEvent) {
     e.preventDefault();
+    await analyze(listingUrl);
+  }
+
+  /** The analysis itself; `url` is passed explicitly so a pasted link can start it before state settles. */
+  async function analyze(url: string) {
+    const listingUrl = url.trim();
     setError(null);
     setBlocked(null);
     setResult(null);
@@ -177,7 +182,15 @@ export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
     const text = e.clipboardData.getData("text/plain");
     const tag = (e.target as HTMLElement).tagName;
     const singleLink = /^\s*https?:\/\/\S+\s*$/.test(text);
-    // A link pasted into a field is just a link. Anything bigger is a copied listing page.
+    // A link pasted into the listing field starts the analysis by itself.
+    if (tag === "INPUT" && (e.target as HTMLInputElement).id === "listing" && singleLink) {
+      e.preventDefault();
+      const url = text.trim();
+      setListingUrl(url);
+      void analyze(url);
+      return;
+    }
+    // A link pasted into another field is just a link. Anything bigger is a copied listing page.
     if ((tag === "INPUT" || tag === "TEXTAREA") && singleLink) return;
     if ((html && /<img\b/i.test(html)) || text.length > 80) {
       if (addPastedPage(html, text)) { e.preventDefault(); setBlocked(null); return; }
@@ -199,16 +212,10 @@ export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
                 value={listingUrl}
                 onChange={(e) => setListingUrl(e.target.value)}
               />
-              {extension ? (
-                <p className="mt-1.5 text-xs text-brand-700">Chrome extension detected. Links are read through your browser, so Zillow and Redfin work as-is.</p>
-              ) : (
-                <>
-                  <p className="mt-1.5 text-xs text-ink-500">
-                    Zillow and Redfin block server reads. <Link href="/app/extension" className="font-medium text-ink-900 underline">Install the Chrome extension</Link> once and links just work. Without it: use the flip it bookmark below, or press <kbd className="rounded border border-ink-300 bg-white px-1 font-mono text-[11px]">⌘A</kbd> then <kbd className="rounded border border-ink-300 bg-white px-1 font-mono text-[11px]">⌘C</kbd> on the listing and paste anywhere in this form.
-                  </p>
-                  <Bookmarklet />
-                </>
-              )}
+              <p className="mt-1.5 text-xs text-ink-500">
+                Paste a link from Zillow, Redfin, Realtor, Movoto, Estately or a brokerage site and the analysis starts by itself.
+                {extension ? " Chrome extension detected: pages are read through your browser." : ""}
+              </p>
             </div>
 
             <div>

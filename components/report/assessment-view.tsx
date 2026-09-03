@@ -14,7 +14,13 @@ export function ListingCard({ listing }: { listing: ListingInfo }) {
         {listing.sqft ? ` · ${listing.sqft.toLocaleString()} sqft` : ""}
         {listing.photos.length ? ` · ${listing.photos.length} photo${listing.photos.length === 1 ? "" : "s"} from the page` : ""}
       </div>
-      {listing.note && <div className="mt-1 text-amber-700">{listing.note}</div>}
+      {listing.readFrom ? (
+        <div className="mt-1 text-brand-700">
+          Read from <a href={listing.readFrom.url} target="_blank" rel="noreferrer" className="underline">{listing.readFrom.host}</a>, the same MLS listing, because {listing.host} blocked the server.
+        </div>
+      ) : (
+        listing.note && <div className="mt-1 text-amber-700">{listing.note}</div>
+      )}
     </div>
   );
 }

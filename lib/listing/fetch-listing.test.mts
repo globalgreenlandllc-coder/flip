@@ -138,3 +138,39 @@ test("dedupe prefers the larger variant even when the hash contains digits", () 
   ]);
   assert.deepEqual(out, ["https://photos.zillowstatic.com/fp/042ded27b1d67494392badddd357a07e-cc_ft_1536.jpg"]);
 });
+
+test("movoto: one photo per id, largest variant, site chrome dropped, JSON-LD price wins", () => {
+  const html = `<html><head><meta property="og:image" content="https://pi.movoto.com/p/501/2573452_0_u3BNIr_p.webp" />
+    <script type="application/ld+json">[{"@type":"Product","image":"https://pi.movoto.com/p/501/2573452_0_u3BNIr_p.webp","offers":{"@type":"Offer","price":699000}}]</script>
+    <meta property="og:description" content="Previously sold for $655,000. 4 bd 3 ba 2,000 sqft" /></head><body>
+    <img src="https://www.movoto.com/novaimgs/vimages/movoto-lower-small.png">
+    <img src="https://pi.movoto.com/p/501/2573452_0_u3BNIr_t.jpeg">
+    <img src="https://pi.movoto.com/p/501/2573452_0_u3BNIr_l.webp">
+    <img src="https://pi.movoto.com/p/501/2573452_1_AbCdEf_r.webp">
+    <img src="https://pi.movoto.com/p/501/2573452_1_AbCdEf_p.webp"></body></html>`;
+  const info = parseListingHtml("https://www.movoto.com/graham-wa/8208-243rd-st-ct-e-graham-wa-98338-501_1051609/", html);
+  assert.equal(info.price, 699_000);
+  assert.deepEqual(info.photos, [
+    "https://pi.movoto.com/p/501/2573452_0_u3BNIr_l.webp",
+    "https://pi.movoto.com/p/501/2573452_1_AbCdEf_r.webp",
+  ]);
+});
+
+test("estately: address slugs and photo variants", async () => {
+  const { estatelyCandidates } = await import("./resolve.ts");
+  const c = estatelyCandidates("8208 243rd Street Ct E, Graham, WA 98338");
+  assert.equal(c[0], "https://www.estately.com/listings/info/8208-243rd-street-ct-e-graham-wa-98338");
+  assert.ok(c.includes("https://www.estately.com/listings/info/8208-243rd-st-ct-e-graham-wa-98338"));
+  assert.deepEqual(estatelyCandidates("no zip here"), []);
+  const photos = dedupePhotos([
+    "https://images.estately.net/139_NWM2573452_0_1788304049_100x74.jpg",
+    "https://images.estately.net/139_NWM2573452_0_1788304049_320x212a.jpg",
+    "https://images.estately.net/139_NWM2573452_0_1788304049.jpg",
+    "https://images.estately.net/139_NWM2573452_0_1788304049_636x435.jpg",
+    "https://images.estately.net/139_NWM2573452_1_1788304050_636x435.jpg",
+  ]);
+  assert.deepEqual(photos, [
+    "https://images.estately.net/139_NWM2573452_0_1788304049.jpg",
+    "https://images.estately.net/139_NWM2573452_1_1788304050_636x435.jpg",
+  ]);
+});

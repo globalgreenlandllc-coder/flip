@@ -19,6 +19,8 @@ export interface ListingInfo {
   baths?: number;
   sqft?: number;
   photos: string[];
+  /** Set when the pasted site blocked the server and the listing was read elsewhere. */
+  readFrom?: { host: string; url: string; reason: string };
 }
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36";
@@ -44,7 +46,7 @@ function num(s: string | undefined): number | undefined {
 }
 
 const PHOTO_EXT = /\.(?:jpe?g|png|webp)(?:$|[?#])/i;
-const NOT_A_LISTING_PHOTO = /(?:logo|icon|sprite|avatar|favicon|badge|agent|headshot|map|pixel|tracking|placeholder|blank|spacer|\/svg\/)/i;
+const NOT_A_LISTING_PHOTO = /(?:logo|icon|sprite|avatar|favicon|badge|agent|headshot|map|pixel|tracking|placeholder|blank|spacer|\/svg\/|novaimgs|\/static\/|\/assets\/)/i;
 export const MAX_LISTING_PHOTOS = 16;
 
 /** Biggest candidate in a srcset ("url 320w, url 1024w" or "url 1x, url 2x"). */
@@ -142,6 +144,12 @@ export function dedupePhotos(urls: string[]): string[] {
 function photoKey(u: string): string {
   const hash = u.match(/\/fp\/([0-9a-f]{32})/i)?.[1];
   if (hash) return hash;
+  // Movoto: pi.movoto.com/p/<mls>/<id>_<n>_<hash>_<variant>.<ext>
+  const mv = u.match(/pi\.movoto\.com\/p\/\d+\/(\d+_\d+_[A-Za-z0-9]+)_[a-z]\.(?:jpe?g|webp|png)/i);
+  if (mv) return "movoto:" + mv[1];
+  // Estately: images.estately.net/<mls>_<listing>_<n>_<stamp>[_WxH[a]].jpg
+  const es = u.match(/images\.estately\.net\/([0-9]+_[A-Za-z0-9]+_\d+_\d+)(?:_\d+x\d+[a-z]?)?\.(?:jpe?g|webp|png)/i);
+  if (es) return "estately:" + es[1];
   try {
     const path = new URL(u).pathname
       .replace(/\.(?:jpe?g|png|webp)$/i, "")
@@ -154,11 +162,37 @@ function photoKey(u: string): string {
 
 /** Largest number that looks like a pixel size in the filename; 0 if none. */
 function sizeHint(u: string): number {
+  // Movoto variants: l (large) > r > p (preview) > t (thumb).
+  const mv = u.match(/pi\.movoto\.com\/p\/\d+\/\d+_\d+_[A-Za-z0-9]+_([a-z])\./i);
+  if (mv) return { l: 4000, r: 3000, p: 2000, t: 1000 }[mv[1]] ?? 0;
+  // Estately: no size suffix means the original.
+  if (/images\.estately\.net\//i.test(u) && !/_\d+x\d+[a-z]?\.(?:jpe?g|webp|png)$/i.test(u)) return 9000;
   // Drop a leading content hash (zillowstatic: "<32 hex>-variant.jpg") so its
   // digit runs are not mistaken for pixel sizes.
   const name = (u.split("/").pop() ?? "").replace(/^[0-9a-f]{32}-/i, "");
   const nums = (name.match(/\d{3,4}/g) ?? []).map(Number).filter((n) => n >= 200 && n <= 8000);
   return nums.length ? Math.max(...nums) : 0;
+}
+
+/** Price from JSON-LD offers ("offers": {"price": 699000}) when the page has it. */
+export function priceFromJsonLd(html: string): number | undefined {
+  for (const block of html.match(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi) ?? []) {
+    const body = block.replace(/^<script[^>]*>/i, "").replace(/<\/script>$/i, "");
+    let found: number | undefined;
+    const walk = (node: unknown) => {
+      if (found !== undefined || !node || typeof node !== "object") return;
+      if (Array.isArray(node)) return node.forEach(walk);
+      const obj = node as Record<string, unknown>;
+      const offers = obj.offers as Record<string, unknown> | Record<string, unknown>[] | undefined;
+      const offer = Array.isArray(offers) ? offers[0] : offers;
+      const price = offer && typeof offer === "object" ? Number((offer as Record<string, unknown>).price) : NaN;
+      if (Number.isFinite(price) && price >= 20_000) { found = price; return; }
+      for (const v of Object.values(obj)) if (v && typeof v === "object") walk(v);
+    };
+    try { walk(JSON.parse(body)); } catch { /* not JSON */ }
+    if (found !== undefined) return found;
+  }
+  return undefined;
 }
 
 export function parseListingHtml(url: string, html: string): ListingInfo {
@@ -170,6 +204,7 @@ export function parseListingHtml(url: string, html: string): ListingInfo {
   // Price: meta text first, then the listing's embedded JSON (portals put
   // the price in a data blob rather than in the description).
   const price =
+    priceFromJsonLd(html) ??
     num(text.match(/\$\s?([0-9]{2,3}(?:,[0-9]{3})+|[0-9]{5,8})/)?.[1]) ??
     num(html.match(/\\?"(?:listPrice|unformattedPrice|price)\\?":\s*\\?"?\$?([0-9]{5,8})/)?.[1]);
   const beds = num(text.match(/([0-9]+(?:\.[0-9])?)\s*(?:bd|bds|bed|beds|bedroom)/i)?.[1]);
