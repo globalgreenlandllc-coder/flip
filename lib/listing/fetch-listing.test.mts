@@ -114,3 +114,19 @@ test("parseListingText ignores monthly payment figures when picking the price", 
   assert.equal(f.baths, 3);
   assert.equal(f.sqft, 2072);
 });
+
+test("prefill from the bookmark query string", async () => {
+  const { prefillFromParams } = await import("./prefill.ts");
+  const p = prefillFromParams({
+    listing: "https://www.zillow.com/homedetails/8208-243rd-Street-Ct-E-Graham-WA-98338/1_zpid/",
+    photos: "https://photos.zillowstatic.com/fp/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-cc_ft_960.jpg,https://photos.zillowstatic.com/fp/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-cc_ft_1536.jpg,https://photos.zillowstatic.com/fp/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-d_d.jpg",
+    text: "8208 243rd Street Ct E, Graham, WA 98338 $589,000 3 beds 2 baths 1,650 sqft",
+  });
+  assert.ok(p);
+  assert.equal(p!.photos.length, 2);
+  assert.equal(p!.price, 589_000);
+  assert.equal(p!.beds, 3);
+  assert.equal(p!.sqft, 1650);
+  assert.equal(p!.address, "8208 243rd Street Ct E, Graham, WA 98338");
+  assert.equal(prefillFromParams({}), null);
+});

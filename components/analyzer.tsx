@@ -5,6 +5,8 @@ import type { Report } from "@/lib/engine/types";
 import type { RenovationPlan } from "@/lib/engine/renovation";
 import type { PhotoAssessment } from "@/lib/vision/schema";
 import { parsePastedListing, type ListingInfo } from "@/lib/listing/fetch-listing";
+import type { Prefill } from "@/lib/listing/prefill";
+import { Bookmarklet } from "@/components/app/bookmarklet";
 import { ReportView } from "@/components/report/report-view";
 import { PlanView } from "@/components/report/plan-view";
 import { AssessmentView, ListingCard } from "@/components/report/assessment-view";
@@ -38,13 +40,17 @@ async function toJpeg(file: File, maxEdge = 1280): Promise<{ base64: string; med
   return { base64: dataUrl.slice(dataUrl.indexOf(",") + 1), mediaType: "image/jpeg" };
 }
 
-export function Analyzer() {
-  const [listingUrl, setListingUrl] = useState("");
-  const [photoUrls, setPhotoUrls] = useState("");
-  const [showLinks, setShowLinks] = useState(false);
+type PastedSummary = { address?: string; beds?: number; baths?: number; sqft?: number; photos: number; source: "paste" | "bookmark" };
+
+export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
+  const [listingUrl, setListingUrl] = useState(prefill?.listingUrl ?? "");
+  const [photoUrls, setPhotoUrls] = useState(prefill?.photos.join("\n") ?? "");
+  const [showLinks, setShowLinks] = useState(Boolean(prefill?.photos.length));
   const [files, setFiles] = useState<{ file: File; url: string }[]>([]);
-  const [askingPrice, setAskingPrice] = useState("");
-  const [pasted, setPasted] = useState<{ address?: string; beds?: number; baths?: number; sqft?: number; photos: number } | null>(null);
+  const [askingPrice, setAskingPrice] = useState(prefill?.price ? String(prefill.price) : "");
+  const [pasted, setPasted] = useState<PastedSummary | null>(
+    prefill ? { address: prefill.address, beds: prefill.beds, baths: prefill.baths, sqft: prefill.sqft, photos: prefill.photos.length, source: "bookmark" } : null,
+  );
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -70,10 +76,10 @@ export function Analyzer() {
   /** A whole listing page pasted from the browser: photos, price and facts. */
   const addPastedPage = useCallback((html: string, text: string) => {
     const info = parsePastedListing(html, text, listingUrl || undefined);
-    if (!info.photos.length && !info.price && !info.address) return false;
+    if (!info.photos.length && !info.price && !info.address && !info.beds) return false;
     if (info.photos.length) addUrls(info.photos.join("\n"));
     if (info.price) setAskingPrice((prev) => prev || String(info.price));
-    setPasted({ address: info.address, beds: info.beds, baths: info.baths, sqft: info.sqft, photos: info.photos.length });
+    setPasted({ address: info.address, beds: info.beds, baths: info.baths, sqft: info.sqft, photos: info.photos.length, source: "paste" });
     return true;
   }, [listingUrl, addUrls]);
 
@@ -139,9 +145,13 @@ export function Analyzer() {
           if (items.length) { e.preventDefault(); addFiles(items); return; }
           const html = e.clipboardData.getData("text/html");
           const text = e.clipboardData.getData("text/plain");
-          // A copied listing page: has image tags. Handle it wherever it lands.
-          if (html && /<img\b/i.test(html)) { e.preventDefault(); addPastedPage(html, text); return; }
           const tag = (e.target as HTMLElement).tagName;
+          const singleLink = /^\s*https?:\/\/\S+\s*$/.test(text);
+          // A link pasted into a field is just a link. Anything bigger is a copied listing page.
+          if ((tag === "INPUT" || tag === "TEXTAREA") && singleLink) return;
+          if ((html && /<img\b/i.test(html)) || text.length > 80) {
+            if (addPastedPage(html, text)) { e.preventDefault(); return; }
+          }
           if (tag !== "INPUT" && tag !== "TEXTAREA" && addUrls(text)) e.preventDefault();
         }}
         className="card p-5 sm:p-6"
@@ -158,8 +168,9 @@ export function Analyzer() {
                 onChange={(e) => setListingUrl(e.target.value)}
               />
               <p className="mt-1.5 text-xs text-ink-500">
-                Zillow and Redfin usually block server reads. The reliable way: on the listing page press <kbd className="rounded border border-ink-300 bg-white px-1 font-mono text-[11px]">⌘A</kbd> then <kbd className="rounded border border-ink-300 bg-white px-1 font-mono text-[11px]">⌘C</kbd>, come back and paste anywhere in this form. The photos, price, beds, baths and square feet come along.
+                Zillow and Redfin usually block server reads. Two ways that always work: use the flip it bookmark below, or on the listing page press <kbd className="rounded border border-ink-300 bg-white px-1 font-mono text-[11px]">⌘A</kbd> then <kbd className="rounded border border-ink-300 bg-white px-1 font-mono text-[11px]">⌘C</kbd> and paste anywhere in this form.
               </p>
+              <Bookmarklet />
             </div>
 
             <div>
@@ -220,12 +231,13 @@ export function Analyzer() {
 
           <div className="flex flex-col gap-4 lg:border-l lg:border-ink-100 lg:pl-5">
             {pasted && (
-              <p className="rounded-lg border border-brand-200 bg-brand-50 p-3 text-xs text-brand-700">
-                Read from your paste: {pasted.photos} photo{pasted.photos === 1 ? "" : "s"}
+              <p className={`rounded-lg border p-3 text-xs ${pasted.photos ? "border-brand-200 bg-brand-50 text-brand-700" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+                {pasted.source === "bookmark" ? "From the listing page" : "Read from your paste"}: {pasted.photos} photo{pasted.photos === 1 ? "" : "s"}
                 {pasted.address ? ` · ${pasted.address}` : ""}
                 {pasted.beds ? ` · ${pasted.beds} bd` : ""}
                 {pasted.baths ? ` · ${pasted.baths} ba` : ""}
                 {pasted.sqft ? ` · ${pasted.sqft.toLocaleString()} sqft` : ""}
+                {pasted.photos ? "" : ". No photos came through: drag them from the gallery into the drop zone, or use the flip it bookmark."}
               </p>
             )}
             <div>
