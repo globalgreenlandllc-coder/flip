@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Report } from "@/lib/engine/types";
 import type { RenovationPlan } from "@/lib/engine/renovation";
 import type { PhotoAssessment } from "@/lib/vision/schema";
-import { parsePastedListing, type ListingInfo } from "@/lib/listing/fetch-listing";
+import { parseFetchedListing, parsePastedListing, type ListingInfo } from "@/lib/listing/fetch-listing";
+import { detectExtension, fetchViaExtension } from "@/lib/listing/extension";
+import Link from "next/link";
 import type { Prefill } from "@/lib/listing/prefill";
 import { Bookmarklet } from "@/components/app/bookmarklet";
 import { ReportView } from "@/components/report/report-view";
@@ -40,7 +42,7 @@ async function toJpeg(file: File, maxEdge = 1280): Promise<{ base64: string; med
   return { base64: dataUrl.slice(dataUrl.indexOf(",") + 1), mediaType: "image/jpeg" };
 }
 
-type PastedSummary = { address?: string; beds?: number; baths?: number; sqft?: number; photos: number; source: "paste" | "bookmark" };
+type PastedSummary = { address?: string; beds?: number; baths?: number; sqft?: number; photos: number; source: "paste" | "bookmark" | "extension" };
 
 export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
   const [listingUrl, setListingUrl] = useState(prefill?.listingUrl ?? "");
@@ -54,7 +56,15 @@ export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState<ListingInfo | null>(null);
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
+  const [extension, setExtension] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    detectExtension().then((v) => { if (alive) setExtension(v); });
+    return () => { alive = false; };
+  }, []);
 
   const addFiles = useCallback((list: FileList | File[] | null) => {
     if (!list) return;
@@ -93,12 +103,30 @@ export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
   async function run(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setBlocked(null);
     setResult(null);
     try {
       const photos: Photo[] = photoUrls
         .split(/\s+/)
         .filter((u) => /^https?:\/\//.test(u))
         .map((url) => ({ url }));
+      // Link only, extension installed: read the page through the browser.
+      let listing: ListingInfo | undefined;
+      let priceFromPage: number | undefined;
+      let facts: { sqft?: number; beds?: number; baths?: number } = {};
+      if (listingUrl && photos.length === 0 && files.length === 0 && extension) {
+        setStatus("Reading the listing through your browser…");
+        const r = await fetchViaExtension(listingUrl);
+        if (r?.ok && r.html) {
+          listing = parseFetchedListing(listingUrl, r.html);
+          for (const url of listing.photos) photos.push({ url });
+          priceFromPage = listing.price;
+          facts = { sqft: listing.sqft, beds: listing.beds, baths: listing.baths };
+          if (listing.photos.length) { setPhotoUrls(listing.photos.join("\n")); setShowLinks(true); }
+          if (!askingPrice && listing.price) setAskingPrice(String(listing.price));
+          setPasted({ address: listing.address, beds: listing.beds, baths: listing.baths, sqft: listing.sqft, photos: listing.photos.length, source: "extension" });
+        }
+      }
       if (files.length) {
         setStatus(`Preparing ${files.length} photo${files.length === 1 ? "" : "s"}…`);
         for (const { file } of files.slice(0, MAX_UPLOADS)) photos.push(await toJpeg(file));
@@ -110,11 +138,13 @@ export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           listingUrl: listingUrl || undefined,
+          listing,
           photos: photos.length ? photos.slice(0, MAX_PHOTOS) : undefined,
-          subject: pasted && (pasted.sqft || pasted.beds || pasted.baths)
-            ? { ...(pasted.sqft ? { sqft: pasted.sqft } : {}), ...(pasted.beds ? { beds: pasted.beds } : {}), ...(pasted.baths ? { baths: pasted.baths } : {}) }
-            : undefined,
-          deal: askingPrice ? { askingPrice: Number(askingPrice.replace(/[^0-9.]/g, "")) } : undefined,
+          subject: (() => {
+            const f = { sqft: facts.sqft ?? pasted?.sqft, beds: facts.beds ?? pasted?.beds, baths: facts.baths ?? pasted?.baths };
+            return f.sqft || f.beds || f.baths ? { ...(f.sqft ? { sqft: f.sqft } : {}), ...(f.beds ? { beds: f.beds } : {}), ...(f.baths ? { baths: f.baths } : {}) } : undefined;
+          })(),
+          deal: askingPrice ? { askingPrice: Number(askingPrice.replace(/[^0-9.]/g, "")) } : priceFromPage ? { askingPrice: priceFromPage } : undefined,
         }),
       });
       const text = await res.text();
@@ -126,6 +156,10 @@ export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
       }
       if (!res.ok || !json) {
         if (res.status === 413) throw new Error("The photos are too large for one request. Use fewer or smaller photos.");
+        if (res.status === 400 && json?.listing && json.listing.fetched === false) {
+          setBlocked(json.listing);
+          return;
+        }
         throw new Error(json?.error ?? `${res.status} ${res.statusText}`);
       }
       setResult(json);
@@ -136,26 +170,24 @@ export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
     }
   }
 
+  function handlePaste(e: React.ClipboardEvent) {
+    const items = Array.from(e.clipboardData.files);
+    if (items.length) { e.preventDefault(); addFiles(items); return; }
+    const html = e.clipboardData.getData("text/html");
+    const text = e.clipboardData.getData("text/plain");
+    const tag = (e.target as HTMLElement).tagName;
+    const singleLink = /^\s*https?:\/\/\S+\s*$/.test(text);
+    // A link pasted into a field is just a link. Anything bigger is a copied listing page.
+    if ((tag === "INPUT" || tag === "TEXTAREA") && singleLink) return;
+    if ((html && /<img\b/i.test(html)) || text.length > 80) {
+      if (addPastedPage(html, text)) { e.preventDefault(); setBlocked(null); return; }
+    }
+    if (tag !== "INPUT" && tag !== "TEXTAREA" && addUrls(text)) e.preventDefault();
+  }
+
   return (
     <div className="space-y-8">
-      <form
-        onSubmit={run}
-        onPaste={(e) => {
-          const items = Array.from(e.clipboardData.files);
-          if (items.length) { e.preventDefault(); addFiles(items); return; }
-          const html = e.clipboardData.getData("text/html");
-          const text = e.clipboardData.getData("text/plain");
-          const tag = (e.target as HTMLElement).tagName;
-          const singleLink = /^\s*https?:\/\/\S+\s*$/.test(text);
-          // A link pasted into a field is just a link. Anything bigger is a copied listing page.
-          if ((tag === "INPUT" || tag === "TEXTAREA") && singleLink) return;
-          if ((html && /<img\b/i.test(html)) || text.length > 80) {
-            if (addPastedPage(html, text)) { e.preventDefault(); return; }
-          }
-          if (tag !== "INPUT" && tag !== "TEXTAREA" && addUrls(text)) e.preventDefault();
-        }}
-        className="card p-5 sm:p-6"
-      >
+      <form onSubmit={run} onPaste={handlePaste} className="card p-5 sm:p-6">
         <div className="grid gap-5 lg:grid-cols-[1fr_220px]">
           <div className="space-y-5">
             <div>
@@ -167,10 +199,16 @@ export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
                 value={listingUrl}
                 onChange={(e) => setListingUrl(e.target.value)}
               />
-              <p className="mt-1.5 text-xs text-ink-500">
-                Zillow and Redfin usually block server reads. Two ways that always work: use the flip it bookmark below, or on the listing page press <kbd className="rounded border border-ink-300 bg-white px-1 font-mono text-[11px]">⌘A</kbd> then <kbd className="rounded border border-ink-300 bg-white px-1 font-mono text-[11px]">⌘C</kbd> and paste anywhere in this form.
-              </p>
-              <Bookmarklet />
+              {extension ? (
+                <p className="mt-1.5 text-xs text-brand-700">Chrome extension detected. Links are read through your browser, so Zillow and Redfin work as-is.</p>
+              ) : (
+                <>
+                  <p className="mt-1.5 text-xs text-ink-500">
+                    Zillow and Redfin block server reads. <Link href="/app/extension" className="font-medium text-ink-900 underline">Install the Chrome extension</Link> once and links just work. Without it: use the flip it bookmark below, or press <kbd className="rounded border border-ink-300 bg-white px-1 font-mono text-[11px]">⌘A</kbd> then <kbd className="rounded border border-ink-300 bg-white px-1 font-mono text-[11px]">⌘C</kbd> on the listing and paste anywhere in this form.
+                  </p>
+                  <Bookmarklet />
+                </>
+              )}
             </div>
 
             <div>
@@ -232,7 +270,7 @@ export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
           <div className="flex flex-col gap-4 lg:border-l lg:border-ink-100 lg:pl-5">
             {pasted && (
               <p className={`rounded-lg border p-3 text-xs ${pasted.photos ? "border-brand-200 bg-brand-50 text-brand-700" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
-                {pasted.source === "bookmark" ? "From the listing page" : "Read from your paste"}: {pasted.photos} photo{pasted.photos === 1 ? "" : "s"}
+                {pasted.source === "bookmark" ? "From the listing page" : pasted.source === "extension" ? "Read through your browser" : "Read from your paste"}: {pasted.photos} photo{pasted.photos === 1 ? "" : "s"}
                 {pasted.address ? ` · ${pasted.address}` : ""}
                 {pasted.beds ? ` · ${pasted.beds} bd` : ""}
                 {pasted.baths ? ` · ${pasted.baths} ba` : ""}
@@ -259,6 +297,41 @@ export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
       </form>
 
       {error && <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+
+      {blocked && (
+        <section className="card border-amber-200 p-5 sm:p-6">
+          <h2 className="text-lg font-semibold">{blocked.host} would not let the server read this page</h2>
+          {blocked.address && <p className="mt-1 text-sm text-ink-700">{blocked.address}</p>}
+          <p className="mt-3 text-sm text-ink-700">Three ways in, fastest first:</p>
+          <ol className="mt-3 space-y-3">
+            <li className="flex gap-3 text-sm">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-950 text-xs font-bold text-white">1</span>
+              <div>
+                <span className="font-medium">Install the Chrome extension once</span>, then press Analyze again. It reads the page through your browser.{" "}
+                <Link href="/app/extension" className="btn-secondary ml-1 px-2.5 py-1 text-xs">Get the extension</Link>
+              </div>
+            </li>
+            <li className="flex gap-3 text-sm">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-950 text-xs font-bold text-white">2</span>
+              <div>
+                <span className="font-medium">Copy the page.</span>{" "}
+                <a href={blocked.url} target="_blank" rel="noreferrer" className="underline">Open the listing</a>, press <kbd className="rounded border border-ink-300 bg-white px-1 font-mono text-[11px]">⌘A</kbd> then <kbd className="rounded border border-ink-300 bg-white px-1 font-mono text-[11px]">⌘C</kbd>, then click the box below and press <kbd className="rounded border border-ink-300 bg-white px-1 font-mono text-[11px]">⌘V</kbd>.
+                <div
+                  tabIndex={0}
+                  onPaste={handlePaste}
+                  className="mt-2 flex h-16 cursor-text items-center justify-center rounded-lg border-2 border-dashed border-ink-300 text-sm text-ink-500 focus:border-ink-950 focus:outline-none"
+                >
+                  Click here, then paste the copied page
+                </div>
+              </div>
+            </li>
+            <li className="flex gap-3 text-sm">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-950 text-xs font-bold text-white">3</span>
+              <div><span className="font-medium">Drag the gallery photos</span> into the drop zone above and enter the asking price.</div>
+            </li>
+          </ol>
+        </section>
+      )}
 
       {result && (
         <section className="space-y-8">

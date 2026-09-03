@@ -269,3 +269,20 @@ export function parsePastedListing(html: string, text: string, pageUrl?: string)
   const photos = html ? extractPhotos(html, pageUrl ?? "https://pasted.invalid/") : [];
   return { ...facts, address: facts.address ?? (pageUrl ? addressFromUrl(pageUrl) : undefined), photos };
 }
+
+/** Facts + photos from a full listing page the browser fetched for us. */
+export function parseFetchedListing(url: string, html: string): ListingInfo {
+  const base = parseListingHtml(url, html);
+  const text = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<[^>]+>/g, " ");
+  const facts = parseListingText(text);
+  return {
+    ...base,
+    fetched: true,
+    note: undefined,
+    price: base.price ?? facts.price,
+    beds: base.beds ?? facts.beds,
+    baths: base.baths ?? facts.baths,
+    sqft: base.sqft ?? facts.sqft,
+    address: base.address ?? facts.address ?? addressFromUrl(url),
+  };
+}

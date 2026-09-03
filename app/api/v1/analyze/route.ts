@@ -25,6 +25,8 @@ export const maxDuration = 120;
 export async function POST(req: Request) {
   let body: {
     listingUrl?: string;
+    /** A listing the browser already read (flip extension or pasted page). Skips the server fetch. */
+    listing?: ListingInfo;
     photos?: PhotoInput[];
     subject?: Partial<PropertyFacts>;
     deal?: Partial<DealInputs>;
@@ -37,7 +39,22 @@ export async function POST(req: Request) {
   }
 
   let listing: ListingInfo | null = null;
-  if (body.listingUrl) {
+  if (body.listing && typeof body.listing.url === "string" && Array.isArray(body.listing.photos)) {
+    const l = body.listing;
+    listing = {
+      url: l.url,
+      host: String(l.host ?? ""),
+      fetched: Boolean(l.fetched),
+      note: typeof l.note === "string" ? l.note : undefined,
+      title: typeof l.title === "string" ? l.title : undefined,
+      address: typeof l.address === "string" ? l.address : undefined,
+      price: typeof l.price === "number" ? l.price : undefined,
+      beds: typeof l.beds === "number" ? l.beds : undefined,
+      baths: typeof l.baths === "number" ? l.baths : undefined,
+      sqft: typeof l.sqft === "number" ? l.sqft : undefined,
+      photos: l.photos.filter((u): u is string => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, MAX_PHOTOS),
+    };
+  } else if (body.listingUrl) {
     try {
       new URL(body.listingUrl);
     } catch {

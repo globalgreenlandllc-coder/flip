@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "flip",
+  "version": "0.1.0",
+  "description": "Analyze any Zillow, Redfin or Realtor listing in flip: reads the listing through your browser and adds an Analyze button on listing pages.",
+  "host_permissions": [
+    "https://*.zillow.com/*",
+    "https://*.redfin.com/*",
+    "https://*.realtor.com/*",
+    "https://*.trulia.com/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.zillow.com/homedetails/*",
+        "https://www.redfin.com/*/home/*",
+        "https://www.realtor.com/realestateandhomes-detail/*",
+        "https://www.trulia.com/home/*"
+      ],
+      "js": ["content-listing.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://flip-nu-five.vercel.app/*",
+        "https://flip-gutters.vercel.app/*",
+        "http://localhost:3000/*"
+      ],
+      "js": ["content-app.js"],
+      "run_at": "document_start"
+    }
+  ]
+}
