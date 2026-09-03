@@ -1,4 +1,4 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
 /**
@@ -6,16 +6,17 @@ import { NextResponse } from "next/server";
  * public. The app and the API need a signed-in user; API calls get a JSON
  * 401 instead of a redirect so partner integrations see a clean error.
  */
-const isAppRoute = createRouteMatcher(["/app(.*)"]);
-const isApiRoute = createRouteMatcher(["/api/v1(.*)"]);
+const isAppPath = (p: string) => p === "/app" || p.startsWith("/app/");
+const isApiPath = (p: string) => p === "/api/v1" || p.startsWith("/api/v1/");
 
 export default clerkMiddleware(async (auth, req) => {
-  if (isApiRoute(req)) {
+  const path = req.nextUrl.pathname;
+  if (isApiPath(path)) {
     const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: "Sign in to use the API." }, { status: 401 });
     return;
   }
-  if (isAppRoute(req)) await auth.protect();
+  if (isAppPath(path)) await auth.protect();
 });
 
 export const config = {
