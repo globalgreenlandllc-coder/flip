@@ -175,7 +175,7 @@ export function parseListingHtml(url: string, html: string): ListingInfo {
   const sqft = num(text.match(/([0-9]{1,2},?[0-9]{3})\s*(?:sq\.?\s?ft|sqft|square feet)/i)?.[1]);
 
   // Address: og:title on most portals is "123 Main St, City, ST 98103 | ..." or similar.
-  const address = title?.split(/\s[|\-–]\s/)[0]?.match(/\d+\s+[^,]+,\s*[^,]+,\s*[A-Z]{2}\s*\d{5}/)?.[0];
+  const address = title?.split(/\s[|\-–]\s/)[0]?.match(/\d+\s+[^,]+,\s*[^,]+,\s*[A-Z]{2}\s*\d{5}/)?.[0] ?? addressFromUrl(url);
 
   const photos = extractPhotos(html, url);
 
@@ -195,6 +195,34 @@ export function parseListingHtml(url: string, html: string): ListingInfo {
   };
 }
 
+/**
+ * Portals put the address in the URL path, so even a blocked page tells us
+ * which house it is: Zillow "/homedetails/13013-224th-St-E-Graham-WA-98338/…",
+ * Redfin "/WA/Graham/13013-224th-St-E-98338/home/…", Realtor
+ * "/realestateandhomes-detail/13013-224th-St-E_Graham_WA_98338_…".
+ */
+export function addressFromUrl(url: string): string | undefined {
+  let path: string;
+  try {
+    path = decodeURIComponent(new URL(url).pathname);
+  } catch {
+    return undefined;
+  }
+  const title = (s: string) => s.replace(/-/g, " ").trim();
+  // Zillow: /homedetails/<street>-<City>-<ST>-<zip>/<zpid>_zpid/
+  // Street is greedy and the city is the last token before the state, so
+  // "13013-224th-St-E-Graham-WA-98338" splits at Graham, not at St.
+  const z = path.match(/\/homedetails\/(.+)-([A-Za-z.']+)-([A-Z]{2})-(\d{5})\//);
+  if (z) return `${title(z[1])}, ${title(z[2])}, ${z[3]} ${z[4]}`;
+  // Redfin: /<ST>/<City>/<street>-<zip>/home/<id>
+  const r = path.match(/^\/([A-Z]{2})\/([^/]+)\/(.+?)-(\d{5})\/home\//);
+  if (r) return `${title(r[3])}, ${title(r[2])}, ${r[1]} ${r[4]}`;
+  // Realtor: /realestateandhomes-detail/<street>_<City>_<ST>_<zip>_<id>
+  const m = path.match(/\/realestateandhomes-detail\/([^_]+)_([^_]+)_([A-Z]{2})_(\d{5})/);
+  if (m) return `${title(m[1])}, ${title(m[2])}, ${m[3]} ${m[4]}`;
+  return undefined;
+}
+
 export async function fetchListing(url: string, timeoutMs = 8000): Promise<ListingInfo> {
   const host = new URL(url).hostname.replace(/^www\./, "");
   const controller = new AbortController();
@@ -207,12 +235,12 @@ export async function fetchListing(url: string, timeoutMs = 8000): Promise<Listi
     });
     const html = await res.text();
     if (!res.ok) {
-      return { url, host, fetched: false, note: `${host} returned ${res.status}. Upload the listing photos instead.`, photos: [] };
+      return { url, host, fetched: false, note: `${host} returned ${res.status}. Upload the listing photos instead.`, address: addressFromUrl(url), photos: [] };
     }
     return parseListingHtml(url, html);
   } catch (err) {
     const why = err instanceof Error && err.name === "AbortError" ? "timed out" : "could not be reached";
-    return { url, host, fetched: false, note: `${host} ${why}. Upload the listing photos instead.`, photos: [] };
+    return { url, host, fetched: false, note: `${host} ${why}. Upload the listing photos instead.`, address: addressFromUrl(url), photos: [] };
   } finally {
     clearTimeout(timer);
   }

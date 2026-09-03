@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dedupePhotos, parseListingHtml } from "./fetch-listing.ts";
+import { addressFromUrl, dedupePhotos, parseListingHtml } from "./fetch-listing.ts";
 
 test("parses Open Graph metadata from a listing page", () => {
   const html = `<html><head>
@@ -80,4 +80,11 @@ test("falls back to the page's embedded JSON for the price", () => {
   assert.equal(info.price, 599_950);
   assert.equal(info.sqft, 2072);
   assert.equal(info.address, "13013 224th Street E, Graham, WA 98338");
+});
+
+test("reads the address out of portal URLs", () => {
+  assert.equal(addressFromUrl("https://www.zillow.com/homedetails/13013-224th-St-E-Graham-WA-98338/49182454_zpid/"), "13013 224th St E, Graham, WA 98338");
+  assert.equal(addressFromUrl("https://www.redfin.com/WA/Graham/13013-224th-St-E-98338/home/12345"), "13013 224th St E, Graham, WA 98338");
+  assert.equal(addressFromUrl("https://www.realtor.com/realestateandhomes-detail/13013-224th-St-E_Graham_WA_98338_M12345-67890"), "13013 224th St E, Graham, WA 98338");
+  assert.equal(addressFromUrl("https://example.com/listing/1"), undefined);
 });

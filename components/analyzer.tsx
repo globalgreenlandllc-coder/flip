@@ -23,16 +23,18 @@ interface AnalyzeResponse {
 type Photo = { url: string } | { base64: string; mediaType: "image/jpeg" };
 
 const MAX_PHOTOS = 16;
+/** Uploads travel in the request body; Vercel caps bodies at 4.5 MB. Listing photos are fetched server-side and do not count. */
+const MAX_UPLOADS = 12;
 
 /** Downscale in the browser so uploads stay small and vision stays cheap. */
-async function toJpeg(file: File, maxEdge = 1600): Promise<{ base64: string; mediaType: "image/jpeg" }> {
+async function toJpeg(file: File, maxEdge = 1280): Promise<{ base64: string; mediaType: "image/jpeg" }> {
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(bitmap.width * scale);
   canvas.height = Math.round(bitmap.height * scale);
   canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
   return { base64: dataUrl.slice(dataUrl.indexOf(",") + 1), mediaType: "image/jpeg" };
 }
 
@@ -52,7 +54,16 @@ export function Analyzer() {
     const incoming = Array.from(list)
       .filter((f) => f.type.startsWith("image/"))
       .map((file) => ({ file, url: URL.createObjectURL(file) }));
-    setFiles((prev) => [...prev, ...incoming].slice(0, MAX_PHOTOS));
+    setFiles((prev) => [...prev, ...incoming].slice(0, MAX_UPLOADS));
+  }, []);
+
+  /** Dropped or pasted image links (e.g. dragged from a listing gallery) go into the photo-links box. */
+  const addUrls = useCallback((text: string) => {
+    const urls = text.split(/\s+/).filter((u) => /^https?:\/\/\S+/.test(u));
+    if (!urls.length) return false;
+    setPhotoUrls((prev) => [...new Set([...prev.split(/\s+/).filter(Boolean), ...urls])].join("\n"));
+    setShowLinks(true);
+    return true;
   }, []);
 
   const removeFile = useCallback((index: number) => {
@@ -73,7 +84,7 @@ export function Analyzer() {
         .map((url) => ({ url }));
       if (files.length) {
         setStatus(`Preparing ${files.length} photo${files.length === 1 ? "" : "s"}…`);
-        for (const { file } of files.slice(0, MAX_PHOTOS - photos.length)) photos.push(await toJpeg(file));
+        for (const { file } of files.slice(0, MAX_UPLOADS)) photos.push(await toJpeg(file));
       }
       if (!listingUrl && photos.length === 0) throw new Error("Paste a listing link, add photos, or paste photo links.");
       setStatus(photos.length ? `Looking at ${photos.length} photo${photos.length === 1 ? "" : "s"} and running the numbers…` : "Reading the listing…");
@@ -86,8 +97,17 @@ export function Analyzer() {
           deal: askingPrice ? { askingPrice: Number(askingPrice.replace(/[^0-9.]/g, "")) } : undefined,
         }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      const text = await res.text();
+      let json: (AnalyzeResponse & { error?: string }) | null = null;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = null;
+      }
+      if (!res.ok || !json) {
+        if (res.status === 413) throw new Error("The photos are too large for one request. Use fewer or smaller photos.");
+        throw new Error(json?.error ?? `${res.status} ${res.statusText}`);
+      }
       setResult(json);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -98,7 +118,16 @@ export function Analyzer() {
 
   return (
     <div className="space-y-8">
-      <form onSubmit={run} className="card p-5 sm:p-6">
+      <form
+        onSubmit={run}
+        onPaste={(e) => {
+          const items = Array.from(e.clipboardData.files);
+          if (items.length) { e.preventDefault(); addFiles(items); return; }
+          const tag = (e.target as HTMLElement).tagName;
+          if (tag !== "INPUT" && tag !== "TEXTAREA" && addUrls(e.clipboardData.getData("text"))) e.preventDefault();
+        }}
+        className="card p-5 sm:p-6"
+      >
         <div className="grid gap-5 lg:grid-cols-[1fr_220px]">
           <div className="space-y-5">
             <div>
@@ -110,12 +139,12 @@ export function Analyzer() {
                 value={listingUrl}
                 onChange={(e) => setListingUrl(e.target.value)}
               />
-              <p className="mt-1.5 text-xs text-ink-500">Reads the public listing metadata. Zillow and Redfin usually block this, so add the photos below.</p>
+              <p className="mt-1.5 text-xs text-ink-500">Reads the public page for the address, facts and photos. Zillow and Redfin often block that read, so add the photos below either way.</p>
             </div>
 
             <div>
               <div className="mb-1.5 flex items-baseline justify-between">
-                <span className="label mb-0">Photos <span className="font-normal text-ink-500">(up to {MAX_PHOTOS})</span></span>
+                <span className="label mb-0">Photos <span className="font-normal text-ink-500">(up to {MAX_PHOTOS} per analysis)</span></span>
                 <button type="button" onClick={() => setShowLinks((v) => !v)} className="text-xs font-medium text-ink-500 hover:text-ink-900">
                   {showLinks ? "Hide photo links" : "Paste photo links instead"}
                 </button>
@@ -123,7 +152,12 @@ export function Analyzer() {
               <label
                 onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
                 onDragLeave={() => setDragging(false)}
-                onDrop={(e) => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragging(false);
+                  if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+                  else addUrls(e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain"));
+                }}
                 className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-8 text-center transition-colors ${dragging ? "border-ink-950 bg-ink-100/60" : "border-ink-300 hover:border-ink-500"}`}
               >
                 <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
@@ -131,7 +165,7 @@ export function Analyzer() {
                   <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 16 5-5 4 4 3-3 6 6" /><circle cx="16" cy="9" r="1.5" />
                 </svg>
                 <span className="text-sm font-medium">Drop listing photos here, or click to choose</span>
-                <span className="mt-1 text-xs text-ink-500">Kitchen, baths, living areas, exterior. They are resized before upload.</span>
+                <span className="mt-1 text-xs text-ink-500">Drag them straight out of the Zillow or Redfin gallery, paste a screenshot, or upload files. Up to {MAX_UPLOADS} uploads; they are resized first.</span>
               </label>
               {files.length > 0 && (
                 <ul className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-6">

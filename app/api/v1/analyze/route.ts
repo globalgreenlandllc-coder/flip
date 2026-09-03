@@ -58,10 +58,13 @@ export async function POST(req: Request) {
   const photos = [...uploaded, ...remote].slice(0, MAX_PHOTOS);
   const photosUsed = { uploaded: Math.min(uploaded.length, MAX_PHOTOS), fromListing: Math.min(remote.length, Math.max(0, MAX_PHOTOS - uploaded.length)), failed: failed.length };
   if (photos.length === 0) {
-    return NextResponse.json(
-      { error: listing?.note ?? (remoteUrls.length ? "None of the photo links could be fetched. Upload the photos instead." : "No photos. Upload the listing photos or pass photo URLs."), listing },
-      { status: 400 },
-    );
+    const error = listing && !listing.fetched
+      ? `${listing.host} would not let us read the page${listing.address ? ` for ${listing.address}` : ""}. Drag the photos from the listing gallery into the drop zone (or save and upload them), enter the asking price, and run it again.`
+      : remoteUrls.length
+        ? "None of the photo links could be fetched. Upload the photos instead."
+        : "No photos. Upload the listing photos or pass photo URLs.";
+    console.warn("[analyze] 400 no photos", { host: listing?.host, fetched: listing?.fetched, pagePhotos: listing?.photos.length ?? 0, remoteUrls: remoteUrls.length, failed: failed.length, uploaded: uploaded.length });
+    return NextResponse.json({ error, listing }, { status: 400 });
   }
 
   const providers = getProviders();
@@ -79,7 +82,8 @@ export async function POST(req: Request) {
 
   const askingPrice = body.deal?.askingPrice ?? listing?.price;
   if (typeof askingPrice !== "number" || !(askingPrice > 0)) {
-    return NextResponse.json({ error: "No asking price. Pass `deal.askingPrice` or a listing the price could be read from.", listing }, { status: 400 });
+    console.warn("[analyze] 400 no asking price", { host: listing?.host, fetched: listing?.fetched });
+    return NextResponse.json({ error: listing ? "The listing did not give up its price. Enter the asking price and run it again." : "Enter the asking price.", listing }, { status: 400 });
   }
 
   let assessment;
