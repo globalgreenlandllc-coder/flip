@@ -101,10 +101,10 @@ function SampleReport() {
             </div>
           ))}
         </div>
-      </div>
-      <div className="card absolute -bottom-5 -left-6 hidden w-56 p-3 text-xs shadow-lg md:block">
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-500">From the photos</div>
-        <p className="mt-1 leading-snug text-ink-700">Bath gutted to the studs, staining at the tub wall. Budget for subfloor repair; verify plumbing before closing.</p>
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-amber-800">From the photos</div>
+          <p className="mt-1 leading-snug text-amber-900">Bath gutted to the studs, staining at the tub wall. Budget for subfloor repair; verify plumbing before closing.</p>
+        </div>
       </div>
     </div>
   );
@@ -123,8 +123,8 @@ function ReportMock() {
             <tbody>
               {[["$1,131,421", "$1,088,022", "1,890 sqft · renovated · 0.34 mi"], ["$969,726", "$981,301", "1,774 sqft · renovated · 0.27 mi"], ["$956,546", "$1,016,461", "1,820 sqft · updated · 0.26 mi"]].map(([s, a, d]) => (
                 <tr key={s} className="border-t border-ink-100">
-                  <td className="py-1.5 tabular-nums text-ink-500">{s}</td>
-                  <td className="py-1.5 font-medium tabular-nums">{a}</td>
+                  <td className="py-1.5 pr-3 tabular-nums text-ink-500">{s}</td>
+                  <td className="py-1.5 pr-3 font-medium tabular-nums">{a}</td>
                   <td className="py-1.5 text-ink-500">{d}</td>
                 </tr>
               ))}
