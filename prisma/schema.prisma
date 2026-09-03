@@ -1,8 +1,9 @@
-// SQLite for local development. Phase 2 moves this to Postgres; the model
-// does not change.
+// Postgres everywhere (Neon via the Vercel marketplace). DATABASE_URL is the
+// pooled connection for the app; DATABASE_URL_UNPOOLED runs migrations.
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 generator client {
