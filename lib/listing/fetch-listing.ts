@@ -43,13 +43,133 @@ function num(s: string | undefined): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
+const PHOTO_EXT = /\.(?:jpe?g|png|webp)(?:$|[?#])/i;
+const NOT_A_LISTING_PHOTO = /(?:logo|icon|sprite|avatar|favicon|badge|agent|headshot|map|pixel|tracking|placeholder|blank|spacer|\/svg\/)/i;
+export const MAX_LISTING_PHOTOS = 16;
+
+/** Biggest candidate in a srcset ("url 320w, url 1024w" or "url 1x, url 2x"). */
+function biggestInSrcset(srcset: string): string | undefined {
+  let best: { url: string; size: number } | undefined;
+  for (const part of srcset.split(",")) {
+    const [u, d] = part.trim().split(/\s+/);
+    if (!u) continue;
+    const size = d ? parseFloat(d) : 0;
+    if (!best || size > best.size) best = { url: u, size };
+  }
+  return best?.url;
+}
+
+/**
+ * Every listing photo the page exposes publicly: Open Graph and Twitter
+ * tags, JSON-LD "image" fields, and gallery <img>/<source> elements. Filters
+ * out logos, icons, maps and agent headshots. Order is preserved so the
+ * cover photo comes first.
+ */
+export function extractPhotos(html: string, pageUrl: string): string[] {
+  const found: string[] = [];
+  const push = (raw: string | undefined) => {
+    if (!raw) return;
+    let u = decode(raw.trim());
+    if (u.startsWith("//")) u = "https:" + u;
+    else if (u.startsWith("/")) {
+      try { u = new URL(u, pageUrl).toString(); } catch { return; }
+    }
+    if (!/^https?:\/\//.test(u)) return;
+    if (NOT_A_LISTING_PHOTO.test(u)) return;
+    if (!PHOTO_EXT.test(u) && !/(?:photo|image|img|picture|media|cdn)/i.test(u)) return;
+    if (!found.includes(u)) found.push(u);
+  };
+
+  for (const u of meta(html, "og:image")) push(u);
+  for (const u of meta(html, "og:image:secure_url")) push(u);
+  for (const u of meta(html, "twitter:image")) push(u);
+
+  // JSON-LD: "image": "url" | ["url", ...] | {"url": ...}
+  for (const block of html.match(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi) ?? []) {
+    const body = block.replace(/^<script[^>]*>/i, "").replace(/<\/script>$/i, "");
+    try {
+      const walk = (node: unknown) => {
+        if (!node || typeof node !== "object") return;
+        if (Array.isArray(node)) return node.forEach(walk);
+        const obj = node as Record<string, unknown>;
+        const urlOf = (i: unknown): string | undefined =>
+          typeof i === "string" ? i : (i as { url?: string; contentUrl?: string } | null)?.url ?? (i as { contentUrl?: string } | null)?.contentUrl;
+        for (const key of ["image", "photo", "photos", "contentUrl"]) {
+          const img = obj[key];
+          if (Array.isArray(img)) img.forEach((i) => push(urlOf(i)));
+          else if (img) push(urlOf(img));
+        }
+        for (const v of Object.values(obj)) if (v && typeof v === "object") walk(v);
+      };
+      walk(JSON.parse(body));
+    } catch {
+      /* not JSON, skip */
+    }
+  }
+
+  // Gallery images.
+  for (const tag of html.match(/<(?:img|source)\b[^>]*>/gi) ?? []) {
+    const srcset = tag.match(/\b(?:srcset|data-srcset)=["']([^"']+)["']/i)?.[1];
+    if (srcset) push(biggestInSrcset(srcset));
+    const src = tag.match(/\b(?:data-src|data-lazy-src|data-original|src)=["']([^"']+)["']/i)?.[1];
+    if (src && !/^data:/.test(src)) push(src);
+  }
+
+  return dedupePhotos(found).slice(0, MAX_LISTING_PHOTOS);
+}
+
+/**
+ * Listing CDNs serve every photo in several sizes and formats. Group by the
+ * photo's identity (the hash on zillowstatic-style URLs, otherwise the path
+ * with size tokens stripped) and keep the largest variant, jpg before webp.
+ */
+export function dedupePhotos(urls: string[]): string[] {
+  const groups = new Map<string, string[]>();
+  for (const u of urls) {
+    const key = photoKey(u);
+    const g = groups.get(key);
+    if (g) g.push(u);
+    else groups.set(key, [u]);
+  }
+  const out: string[] = [];
+  for (const variants of groups.values()) {
+    variants.sort((a, b) => sizeHint(b) - sizeHint(a) || (/\.jpe?g/i.test(a) ? -1 : 0) - (/\.jpe?g/i.test(b) ? -1 : 0));
+    out.push(variants[0]);
+  }
+  return out;
+}
+
+function photoKey(u: string): string {
+  const hash = u.match(/\/fp\/([0-9a-f]{32})/i)?.[1];
+  if (hash) return hash;
+  try {
+    const path = new URL(u).pathname
+      .replace(/\.(?:jpe?g|png|webp)$/i, "")
+      .replace(/[-_](?:\d{2,4}x\d{2,4}|\d{3,4}w?|cc_ft_\d+|uncropped_scaled_within_\d+_\d+|[a-z]_[a-z]|@\dx|large|medium|small|thumb(?:nail)?)$/gi, "");
+    return path;
+  } catch {
+    return u;
+  }
+}
+
+/** Largest number that looks like a pixel size in the filename; 0 if none. */
+function sizeHint(u: string): number {
+  const name = u.split("/").pop() ?? "";
+  const nums = (name.match(/\d{3,4}/g) ?? []).map(Number).filter((n) => n >= 200 && n <= 8000);
+  return nums.length ? Math.max(...nums) : 0;
+}
+
 export function parseListingHtml(url: string, html: string): ListingInfo {
   const host = new URL(url).hostname.replace(/^www\./, "");
   const title = meta(html, "og:title")[0] ?? html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim();
   const description = meta(html, "og:description")[0] ?? meta(html, "description")[0] ?? "";
   const text = `${title ?? ""} | ${description}`;
 
-  const price = num(text.match(/\$\s?([0-9]{2,3}(?:,[0-9]{3})+|[0-9]{5,8})/)?.[1]);
+  // Price: meta text first, then the listing's embedded JSON (portals put
+  // the price in a data blob rather than in the description).
+  const price =
+    num(text.match(/\$\s?([0-9]{2,3}(?:,[0-9]{3})+|[0-9]{5,8})/)?.[1]) ??
+    num(html.match(/\\?"(?:listPrice|unformattedPrice|price)\\?":\s*\\?"?\$?([0-9]{5,8})/)?.[1]);
   const beds = num(text.match(/([0-9]+(?:\.[0-9])?)\s*(?:bd|bds|bed|beds|bedroom)/i)?.[1]);
   const baths = num(text.match(/([0-9]+(?:\.[0-9])?)\s*(?:ba|bath|baths|bathroom)/i)?.[1]);
   const sqft = num(text.match(/([0-9]{1,2},?[0-9]{3})\s*(?:sq\.?\s?ft|sqft|square feet)/i)?.[1]);
@@ -57,7 +177,7 @@ export function parseListingHtml(url: string, html: string): ListingInfo {
   // Address: og:title on most portals is "123 Main St, City, ST 98103 | ..." or similar.
   const address = title?.split(/\s[|\-–]\s/)[0]?.match(/\d+\s+[^,]+,\s*[^,]+,\s*[A-Z]{2}\s*\d{5}/)?.[0];
 
-  const photos = [...new Set([...meta(html, "og:image"), ...meta(html, "twitter:image")])].filter((u) => /^https?:\/\//.test(u));
+  const photos = extractPhotos(html, url);
 
   const blocked = /captcha|access denied|are you a human|px-captcha|robot/i.test(html) && photos.length === 0;
   return {

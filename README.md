@@ -19,20 +19,50 @@ them. It answers five questions about any listing:
 ## Quick start
 
 ```bash
-npm install
-npm test            # engine unit tests
-npm run demo        # end-to-end report on synthetic data
-npm run demo 600000 # same property at a different asking price
-npm run backtest    # accuracy harness (synthetic until real CSVs exist)
-npm run dev         # Next.js app + POST /api/v1/evaluate
+npm install                      # also runs prisma generate
+npx clerk@latest init --framework next -y   # dev auth keys, no Clerk account needed
+npx prisma migrate dev           # local SQLite for saved deals
+npm run dev                      # http://localhost:3000
 ```
 
-Try the API:
+Put an Anthropic key in `.env.local` as `ANTHROPIC_API_KEY` for the photo
+assessment. Everything else runs without it.
+
+Other commands:
 
 ```bash
-curl -s localhost:3000/api/v1/evaluate \
-  -H 'content-type: application/json' \
-  -d '{"address":"any address, synthetic provider","deal":{"askingPrice":749000}}'
+npm test            # engine, renovation and listing-parser unit tests
+npm run demo        # end-to-end report on synthetic data, in the terminal
+npm run backtest    # accuracy harness (synthetic until real CSVs exist)
+npm run typecheck && npm run lint
+```
+
+### Auth
+
+Sign-in is Clerk. `clerk init` provisions a development instance and writes
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` to `.env.local`;
+run `npx clerk@latest auth login` later to claim it into your Clerk account.
+Route protection lives in `proxy.ts`: `/app` redirects to sign-in, `/api/v1`
+returns a JSON 401.
+
+### Routes
+
+| Route | What |
+|---|---|
+| `/` | Landing page |
+| `/sign-in`, `/sign-up` | Clerk |
+| `/app` | New analysis: listing link + photos → verdict, remodel plan, report |
+| `/app/deals`, `/app/deals/[id]` | Saved deals per user |
+| `/app/quick` | Deal math without photos |
+| `POST /api/v1/analyze` | Listing URL and/or photos → assessment, plan, report |
+| `POST /api/v1/evaluate` | Facts + deal terms → report |
+
+Try the API as a signed-in user (session token as a Bearer):
+
+```bash
+curl -s localhost:3000/api/v1/analyze \
+  -H "Authorization: Bearer $SESSION_JWT" -H 'content-type: application/json' \
+  -d '{"listingUrl":"https://www.zillow.com/homedetails/…","deal":{"askingPrice":599950}}'
 ```
 
 ## How the valuation works
@@ -75,11 +105,15 @@ PASS is a loss at asking.
 ## Layout
 
 ```
-lib/engine/     pure TypeScript, no I/O: comps, ceiling, arv, deal, rehab, evaluate
+lib/engine/     pure TypeScript, no I/O: comps, ceiling, arv, deal, rehab, renovation, evaluate
+lib/vision/     Claude vision photo assessment (structured output) + photo fetcher
+lib/listing/    listing-page metadata and photo extraction from a pasted URL
 lib/data/       SalesProvider / ParcelProvider seam; synthetic provider for dev
-app/api/v1/     public evaluate endpoint (the same call partners will make)
+app/            landing, auth pages, app shell (/app), API routes
+components/     report views, analyzer, evaluator, app shell pieces
+prisma/         Deal model (SQLite locally; Postgres in phase 2)
 scripts/        demo.mts, backtest.mts
-docs/DATA.md    where real data comes from and how to calibrate
+docs/           DATA.md (sources, calibration), DEMO-PHOTOS.md
 ```
 
 The engine is the product. It runs unchanged in the API, in the backtest
@@ -118,6 +152,12 @@ costs them money.
 
 ## Status
 
-Phase 0. All market data is synthetic (`lib/engine/synthetic.ts`) and the
-adjustment rates in `lib/engine/defaults.ts` are placeholders. Nothing here
-is a valuation until phase 1 replaces both.
+Phase 0 plus the listing analyzer and the SaaS shell (auth, saved deals).
+All market data is synthetic (`lib/engine/synthetic.ts`) and the adjustment
+and rehab rates in `lib/engine/defaults.ts` / `lib/engine/renovation.ts` are
+placeholders. The photo assessment is real. Nothing here is a valuation
+until phase 1 replaces the data and calibrates the rates.
+
+Listing links: the page is read for its public metadata and photos. Portals
+block automated reads intermittently; when that happens the app says so and
+uploaded photos carry the analysis.

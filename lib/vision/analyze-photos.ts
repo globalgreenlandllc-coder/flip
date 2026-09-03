@@ -14,7 +14,7 @@ export interface PhotoContext {
   submarket?: string;
 }
 
-export const MAX_PHOTOS = 12;
+export const MAX_PHOTOS = 16;
 
 const SYSTEM = `You are the project manager for an experienced house flipper, assessing listing photos before an offer.
 Your job is to say what condition each room is in, what a buyer in this market would want changed, and what is already fine and should be left alone.

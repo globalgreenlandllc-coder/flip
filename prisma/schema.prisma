@@ -1,0 +1,27 @@
+// SQLite for local development. Phase 2 moves this to Postgres; the model
+// does not change.
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Deal {
+  id          String   @id @default(cuid())
+  userId      String
+  createdAt   DateTime @default(now())
+  title       String
+  source      String?
+  askingPrice Float
+  verdict     String
+  arv         Float
+  maxOffer    Float
+  profit      Float
+  /// JSON: { report, plan?, assessment?, listing? }
+  payload     String
+
+  @@index([userId, createdAt])
+}

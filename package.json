@@ -10,10 +10,15 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "tsx --test lib/engine/*.test.mts lib/listing/*.test.mts",
     "demo": "tsx scripts/demo.mts",
-    "backtest": "tsx scripts/backtest.mts"
+    "backtest": "tsx scripts/backtest.mts",
+    "postinstall": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",
+    "@clerk/nextjs": "^7.9.0",
+    "@prisma/client": "^6.19.3",
     "next": "16.3.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -26,6 +31,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
+    "prisma": "^6.19.3",
     "tailwindcss": "^4",
     "tsx": "^4.19.2",
     "typescript": "^5"

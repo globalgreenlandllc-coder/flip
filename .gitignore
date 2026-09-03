@@ -40,3 +40,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# clerk keyless dev keys
+.clerk/
+
+# local sqlite
+prisma/dev.db*

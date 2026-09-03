@@ -4,6 +4,7 @@ import type { DealInputs, PropertyFacts, RiskFlag } from "@/lib/engine";
 import { planRenovation } from "@/lib/engine/renovation";
 import { getProviders } from "@/lib/data";
 import { analyzePhotos, MAX_PHOTOS, type PhotoInput } from "@/lib/vision/analyze-photos";
+import { fetchPhotos } from "@/lib/vision/fetch-photo";
 import { fetchListing, type ListingInfo } from "@/lib/listing/fetch-listing";
 
 export const maxDuration = 120;
@@ -45,10 +46,20 @@ export async function POST(req: Request) {
     listing = await fetchListing(body.listingUrl);
   }
 
-  const photos = (body.photos?.length ? body.photos : (listing?.photos ?? []).map((url) => ({ url }))).slice(0, MAX_PHOTOS);
+  // Uploaded photos first, then everything the listing page exposes, then
+  // pasted links. Remote images are fetched here so a CDN that refuses
+  // Claude's fetch, or one dead link, cannot sink the whole run.
+  const uploaded = (body.photos ?? []).filter((p): p is Extract<PhotoInput, { base64: string }> => "base64" in p);
+  const remoteUrls = [
+    ...(listing?.photos ?? []),
+    ...(body.photos ?? []).filter((p): p is { url: string } => "url" in p).map((p) => p.url),
+  ].filter((u, i, arr) => arr.indexOf(u) === i);
+  const { photos: remote, failed } = await fetchPhotos(remoteUrls.slice(0, MAX_PHOTOS));
+  const photos = [...uploaded, ...remote].slice(0, MAX_PHOTOS);
+  const photosUsed = { uploaded: Math.min(uploaded.length, MAX_PHOTOS), fromListing: Math.min(remote.length, Math.max(0, MAX_PHOTOS - uploaded.length)), failed: failed.length };
   if (photos.length === 0) {
     return NextResponse.json(
-      { error: listing?.note ?? "No photos. Upload the listing photos or pass photo URLs.", listing },
+      { error: listing?.note ?? (remoteUrls.length ? "None of the photo links could be fetched. Upload the photos instead." : "No photos. Upload the listing photos or pass photo URLs."), listing },
       { status: 400 },
     );
   }
@@ -124,6 +135,7 @@ export async function POST(req: Request) {
     provider: providers.name,
     warning: providers.name === "synthetic" ? "Synthetic market data. ARV, ceiling and comps are not real; the photo assessment is." : undefined,
     listing,
+    photosUsed,
     assessment,
     plan,
     report,
