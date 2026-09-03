@@ -65,6 +65,24 @@ curl -s localhost:3000/api/v1/analyze \
   -d '{"listingUrl":"https://www.zillow.com/homedetails/…","deal":{"askingPrice":599950}}'
 ```
 
+## Deploy
+
+Production runs on Vercel with a Neon Postgres from the Vercel marketplace.
+The GitHub repo is connected, so every push to `main` deploys.
+
+```bash
+npx vercel link                       # once per machine
+npx vercel env pull .env.vercel.local # Neon connection strings
+npx vercel --prod                     # manual deploy
+```
+
+Environment variables on the project: the Clerk keys and URLs, `ANTHROPIC_API_KEY`,
+`DATA_PROVIDER`, and the Neon `DATABASE_URL` / `DATABASE_URL_UNPOOLED` set by the
+integration. The build runs `prisma migrate deploy` before `next build`.
+
+Clerk is still the development instance. Before real customers sign up,
+create a production instance in the Clerk dashboard and swap the two keys.
+
 ## How the valuation works
 
 **Comp selection with progressive relaxation.** Start at 0.5 mi / 6 months /
