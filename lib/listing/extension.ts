@@ -42,7 +42,7 @@ export async function detectExtension(timeoutMs = 500): Promise<string | null> {
 }
 
 /** Ask the extension for a listing page. Null when it does not answer in time. */
-export async function fetchViaExtension(url: string, timeoutMs = 25_000): Promise<ExtensionFetchResult | null> {
+export async function fetchViaExtension(url: string, timeoutMs = 45_000): Promise<ExtensionFetchResult | null> {
   if (typeof window === "undefined") return null;
   const id = Math.random().toString(36).slice(2);
   const reply = once<ExtensionFetchResult>(

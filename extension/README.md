@@ -11,3 +11,7 @@ Install (unpacked, until it is on the Chrome Web Store):
 
 Then in flip, paste a listing link and press Analyze: the app fetches the
 page through the extension. Or click "Analyze in flip" on any listing.
+
+Permissions: it can read Zillow, Redfin, Realtor and Trulia pages (to fetch
+the listing you asked for, and to open it in a background tab when the site
+challenges a plain fetch), and it talks to the flip app pages. Nothing else.
