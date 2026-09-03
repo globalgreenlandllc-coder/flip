@@ -25,6 +25,7 @@ test("dated house: kitchen, baths, flooring, paint get done; untouched categorie
   assert.ok(by.kitchen.net > 0, `kitchen net ${by.kitchen.net}`);
   assert.equal(by.paint.action, "refresh");
   assert.equal(by.roof.action, "inspect");
+  assert.ok(by.roof.costLikely > 0, "unseen roof is budgeted, not free");
   assert.equal(by.windows.action, "skip");
   assert.ok(plan.uplift > 0);
   assert.ok(plan.totals.valueAdded > plan.totals.costLikely, "plan should be net positive");
@@ -73,4 +74,16 @@ test("replace vs refresh: picks the higher net option", () => {
   });
   const kitchen = plan.items.find((i) => i.key === "kitchen")!;
   assert.notEqual(kitchen.action, "replace");
+});
+
+test("unseen major categories carry a placeholder budget so rehab is never $0", () => {
+  const plan = planRenovation({
+    subject, currentCondition: "updated", arvPoint: 1_100_000, ceiling: null, config: DEFAULT_MARKET_CONFIG,
+    needs: needs({ kitchen: "unknown", baths: "unknown", roof: "unknown", landscaping: "unknown" }),
+  });
+  const by = Object.fromEntries(plan.items.map((i) => [i.key, i]));
+  assert.ok(by.kitchen.costLikely > 0);
+  assert.ok(by.baths.costLikely > 0);
+  assert.equal(by.landscaping.costLikely, 0);
+  assert.ok(plan.rehab.likely > 0);
 });

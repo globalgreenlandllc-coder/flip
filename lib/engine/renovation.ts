@@ -67,6 +67,9 @@ export const DEFAULT_RENOVATION_COSTS: Record<CategoryKey, CategoryCost> = {
 
 export type PlanAction = "replace" | "refresh" | "required" | "inspect" | "skip";
 
+/** Categories that decide a flip's budget. Unseen, they are budgeted as a refresh until inspected. */
+const MAJOR: CategoryKey[] = ["kitchen", "baths", "roof", "electrical", "plumbing", "hvac"];
+
 export interface PlanItem {
   key: CategoryKey;
   label: string;
@@ -147,7 +150,11 @@ export function planRenovation(input: RenovationInput): RenovationPlan {
       continue;
     }
     if (need === "unknown") {
-      items.push(make("inspect", [0, 0], 0, "Not visible in the photos. Verify on the walkthrough; the hidden-risk reserve covers surprises."));
+      if (MAJOR.includes(key)) {
+        items.push(make("inspect", refresh, 0, "Not in the photos. Budgeted as a refresh until you see it; a $0 line here would flatter the deal."));
+      } else {
+        items.push(make("inspect", [0, 0], 0, "Not visible in the photos. Verify on the walkthrough; the hidden-risk reserve covers surprises."));
+      }
       continue;
     }
     if (c.system) {
@@ -207,7 +214,7 @@ export function planRenovation(input: RenovationInput): RenovationPlan {
     }
   }
 
-  const doing = items.filter((i) => i.action === "replace" || i.action === "refresh" || i.action === "required");
+  const doing = items.filter((i) => i.action === "replace" || i.action === "refresh" || i.action === "required" || (i.action === "inspect" && i.costLikely > 0));
   const totals = {
     costLow: doing.reduce((s, i) => s + i.costLow, 0),
     costLikely: doing.reduce((s, i) => s + i.costLikely, 0),

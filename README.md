@@ -176,6 +176,10 @@ and rehab rates in `lib/engine/defaults.ts` / `lib/engine/renovation.ts` are
 placeholders. The photo assessment is real. Nothing here is a valuation
 until phase 1 replaces the data and calibrates the rates.
 
-Listing links: the page is read for its public metadata and photos. Portals
-block automated reads intermittently; when that happens the app says so and
-uploaded photos carry the analysis.
+Listing links: paste one and the analysis starts. The page is read for its
+metadata and photos. Zillow, Redfin, Realtor and Trulia block server reads,
+so for those the address is taken from the link and the same MLS listing is
+read from Estately (`lib/listing/resolve.ts`); the report says so. Movoto
+and most brokerage sites are read directly. Fallbacks when nothing works:
+the Chrome extension (`extension/`, reads pages through the user's browser),
+copy-and-paste of the listing page, or dragging photos in.
