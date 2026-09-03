@@ -9,6 +9,7 @@ import { PhotoRead } from "@/components/landing/photo-read";
 import { PHOTOS } from "@/components/landing/photos";
 import { StressTest } from "@/components/landing/stress-test";
 import { Reveal } from "@/components/landing/reveal";
+import { RemodelPlan } from "@/components/landing/remodel-plan";
 
 const QUESTIONS = [
   { q: "What's the ceiling here?", a: "The top of this block's market. No finish level pushes a house past it, and most flippers lose money by ignoring it." },
@@ -40,8 +41,8 @@ const FAQ = [
 
 const NAV_LINKS = [
   ["#report", "The report"],
+  ["#plan", "Remodel plan"],
   ["#stress", "Stress test"],
-  ["#how", "How it works"],
   ["#ceiling", "The ceiling"],
   ["#pricing", "Pricing"],
   ["#faq", "FAQ"],
@@ -222,6 +223,21 @@ export default async function Landing() {
       </section>
 
       <PhotoRead />
+
+      {/* Remodel plan */}
+      <section id="plan" className="mx-auto max-w-6xl px-6 py-24">
+        <div className="max-w-2xl">
+          <div className="eyebrow">For contractors</div>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Spend where the block pays. Stop where it doesn&apos;t.</h2>
+          <p className="mt-3 leading-relaxed text-ink-700">
+            flip prices every category against what buyers on this block actually pay for it. What is below par gets brought to par. What is already there is left alone. And when the neighborhood tops out, the plan says so before you put $35,000 into a kitchen the sale will not repay. Drag the ceiling and watch the plan change.
+          </p>
+        </div>
+        <div className="mt-12">
+          <RemodelPlan />
+        </div>
+        <p className="mt-4 text-xs text-ink-500">Sample house: 1,840 sqft, 3 bd / 2 ba, built 1952, dated condition, comps say $845,000 renovated. Unit costs are placeholders at contractor rates until calibrated for your metro.</p>
+      </section>
 
       {/* How it works */}
       <section id="how" className="mx-auto max-w-6xl px-6 py-24">

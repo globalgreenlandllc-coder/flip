@@ -1,5 +1,6 @@
 import type { RenovationPlan, PlanItem } from "@/lib/engine/renovation";
 import { Block, money } from "./report-view";
+import { ValueLadder } from "./value-ladder";
 
 const ACTION_STYLE: Record<PlanItem["action"], string> = {
   required: "bg-red-100 text-red-800",
@@ -17,6 +18,14 @@ export function PlanView({ plan }: { plan: RenovationPlan }) {
         {Number.isFinite(plan.headroom) ? `, and the block will pay for about ${money(plan.headroom)} of it` : ""}.{" "}
         <span className="font-medium text-ink-900">{plan.finishAdvice}</span>
       </p>
+      <div className="card mb-3 p-4">
+        <ValueLadder
+          asIs={plan.asIsValue}
+          afterPlan={plan.asIsValue + plan.totals.valueAdded}
+          arv={plan.asIsValue + plan.uplift}
+          ceiling={Number.isFinite(plan.headroom) ? plan.asIsValue + plan.headroom : null}
+        />
+      </div>
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-ink-100/60 text-left text-xs uppercase tracking-wide text-ink-500">

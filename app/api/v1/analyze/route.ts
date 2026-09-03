@@ -138,7 +138,12 @@ export async function POST(req: Request) {
     subject,
     currentCondition: assessment.overallCondition,
     needs: assessment.categoryNeeds,
-    arvPoint: arv.point,
+    // Comp-based (uncapped) ARV on purpose: the planner derives the as-is
+    // value from it and lets the ceiling decide how much of the uplift the
+    // block will pay for. Passing the already-capped arv.point made the
+    // ceiling shrink every item a little instead of skipping the ones that
+    // would not come back.
+    arvPoint: arv.compBased,
     ceiling: arv.ceiling,
     config: DEFAULT_MARKET_CONFIG,
   });
