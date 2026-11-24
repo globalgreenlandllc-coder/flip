@@ -1,30 +1,28 @@
-import type { PhotoInput, PhotoMediaType } from "./analyze-photos";
+import { safeFetch } from "@/lib/net/safe-fetch";
+import { sniffImage } from "./image-type";
+import type { PhotoInput } from "./analyze-photos";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36";
 const MAX_BYTES = 4_500_000;
-const MEDIA: Record<string, PhotoMediaType> = { "image/jpeg": "image/jpeg", "image/jpg": "image/jpeg", "image/png": "image/png", "image/webp": "image/webp", "image/gif": "image/gif" };
 
 /**
  * Fetch a listing photo ourselves and hand Claude the bytes. Listing CDNs
  * sometimes refuse non-browser fetches, and one bad URL must not sink the
  * whole analysis; failures come back as null and are skipped.
+ *
+ * The link is whatever a person pasted, so it goes through safeFetch (public
+ * internet only, size cap, deadline), and the file must really be an image:
+ * its first bytes decide the type, not the server's Content-Type.
  */
 export async function fetchPhoto(url: string, timeoutMs = 10_000): Promise<PhotoInput | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { headers: { "user-agent": UA, accept: "image/*,*/*;q=0.8" }, signal: controller.signal, redirect: "follow" });
-    if (!res.ok) return null;
-    const type = (res.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
-    const mediaType = MEDIA[type];
+    const res = await safeFetch(url, { headers: { "user-agent": UA, accept: "image/*,*/*;q=0.8" }, timeoutMs, maxBytes: MAX_BYTES });
+    if (!res.ok || res.body.byteLength === 0) return null;
+    const mediaType = sniffImage(res.body.subarray(0, 16));
     if (!mediaType) return null;
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.byteLength === 0 || buf.byteLength > MAX_BYTES) return null;
-    return { base64: buf.toString("base64"), mediaType };
+    return { base64: res.body.toString("base64"), mediaType };
   } catch {
     return null;
-  } finally {
-    clearTimeout(timer);
   }
 }
 

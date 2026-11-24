@@ -1,10 +1,9 @@
 /**
- * Best-effort listing metadata from a pasted URL.
+ * Best-effort listing metadata from a listing page's HTML or copied text.
  *
  * Reads the public Open Graph / meta tags and obvious text patterns only.
- * Zillow, Redfin and Realtor.com block automated fetches most of the time;
- * when that happens we say so and the user uploads the photos instead.
- * This deliberately does not scrape listing pages beyond their meta tags.
+ * Pure parsing: this file is bundled for the browser too (the analyzer parses
+ * a pasted page there). The server-side read of a link is read-listing.ts.
  */
 
 export interface ListingInfo {
@@ -23,11 +22,11 @@ export interface ListingInfo {
   readFrom?: { host: string; url: string; reason: string };
 }
 
-const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36";
-
 function meta(html: string, key: string): string[] {
   const out: string[] = [];
-  const re = new RegExp(`<meta[^>]+(?:property|name)=["']${key}["'][^>]*>`, "gi");
+  // [^<>], here and below: an attribute run never crosses into the next tag. With [^>] a page
+  // of unclosed "<meta " made every tag scan to the end of the page: seconds for 100 KB.
+  const re = new RegExp(`<meta[^<>]+(?:property|name)=["']${key}["'][^<>]*>`, "gi");
   for (const tag of html.match(re) ?? []) {
     const m = tag.match(/content=["']([^"']*)["']/i);
     if (m?.[1]) out.push(decode(m[1]));
@@ -48,6 +47,32 @@ function num(s: string | undefined): number | undefined {
 const PHOTO_EXT = /\.(?:jpe?g|png|webp)(?:$|[?#])/i;
 const NOT_A_LISTING_PHOTO = /(?:logo|icon|sprite|avatar|favicon|badge|agent|headshot|map|pixel|tracking|placeholder|blank|spacer|\/svg\/|novaimgs|\/static\/|\/assets\/)/i;
 export const MAX_LISTING_PHOTOS = 16;
+const MAX_PHOTO_CANDIDATES = 400;
+const MAX_LINK_CHARS = 2_000;
+const MAX_JSON_LD_BLOCKS = 50;
+
+/**
+ * The bodies of the page's JSON-LD scripts, found by plain scanning. The
+ * regex this replaces had a lazy "anything up to </script>" in it, which on a
+ * page of script tags that are never closed rescans the rest of the page for
+ * every tag. This is one pass: once no closing tag is left, it stops.
+ */
+function jsonLdBlocks(html: string): string[] {
+  const out: string[] = [];
+  const lower = html.toLowerCase();
+  let at = 0;
+  while (out.length < MAX_JSON_LD_BLOCKS) {
+    const open = lower.indexOf("<script", at);
+    if (open < 0) break;
+    const tagEnd = lower.indexOf(">", open);
+    if (tagEnd < 0) break;
+    const close = lower.indexOf("</script>", tagEnd);
+    if (close < 0) break;
+    if (lower.slice(open, tagEnd).includes("application/ld+json")) out.push(html.slice(tagEnd + 1, close));
+    at = close + "</script>".length;
+  }
+  return out;
+}
 
 /** Biggest candidate in a srcset ("url 320w, url 1024w" or "url 1x, url 2x"). */
 function biggestInSrcset(srcset: string): string | undefined {
@@ -69,8 +94,10 @@ function biggestInSrcset(srcset: string): string | undefined {
  */
 export function extractPhotos(html: string, pageUrl: string): string[] {
   const found: string[] = [];
+  const seen = new Set<string>();
   const push = (raw: string | undefined) => {
-    if (!raw) return;
+    // A listing has dozens of photos. A page offering thousands of "photos", or a link longer than any link, is not one.
+    if (!raw || raw.length > MAX_LINK_CHARS || found.length >= MAX_PHOTO_CANDIDATES) return;
     let u = decode(raw.trim());
     if (u.startsWith("//")) u = "https:" + u;
     else if (u.startsWith("/")) {
@@ -79,7 +106,9 @@ export function extractPhotos(html: string, pageUrl: string): string[] {
     if (!/^https?:\/\//.test(u)) return;
     if (NOT_A_LISTING_PHOTO.test(u)) return;
     if (!PHOTO_EXT.test(u) && !/(?:photo|image|img|picture|media|cdn)/i.test(u)) return;
-    if (!found.includes(u)) found.push(u);
+    if (seen.has(u)) return;
+    seen.add(u);
+    found.push(u);
   };
 
   for (const u of meta(html, "og:image")) push(u);
@@ -87,8 +116,7 @@ export function extractPhotos(html: string, pageUrl: string): string[] {
   for (const u of meta(html, "twitter:image")) push(u);
 
   // JSON-LD: "image": "url" | ["url", ...] | {"url": ...}
-  for (const block of html.match(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi) ?? []) {
-    const body = block.replace(/^<script[^>]*>/i, "").replace(/<\/script>$/i, "");
+  for (const body of jsonLdBlocks(html)) {
     try {
       const walk = (node: unknown) => {
         if (!node || typeof node !== "object") return;
@@ -110,7 +138,7 @@ export function extractPhotos(html: string, pageUrl: string): string[] {
   }
 
   // Gallery images.
-  for (const tag of html.match(/<(?:img|source)\b[^>]*>/gi) ?? []) {
+  for (const tag of html.match(/<(?:img|source)\b[^<>]*>/gi) ?? []) {
     const srcset = tag.match(/\b(?:srcset|data-srcset)=["']([^"']+)["']/i)?.[1];
     if (srcset) push(biggestInSrcset(srcset));
     const src = tag.match(/\b(?:data-src|data-lazy-src|data-original|src)=["']([^"']+)["']/i)?.[1];
@@ -176,8 +204,7 @@ function sizeHint(u: string): number {
 
 /** Price from JSON-LD offers ("offers": {"price": 699000}) when the page has it. */
 export function priceFromJsonLd(html: string): number | undefined {
-  for (const block of html.match(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi) ?? []) {
-    const body = block.replace(/^<script[^>]*>/i, "").replace(/<\/script>$/i, "");
+  for (const body of jsonLdBlocks(html)) {
     let found: number | undefined;
     const walk = (node: unknown) => {
       if (found !== undefined || !node || typeof node !== "object") return;
@@ -197,8 +224,9 @@ export function priceFromJsonLd(html: string): number | undefined {
 
 export function parseListingHtml(url: string, html: string): ListingInfo {
   const host = new URL(url).hostname.replace(/^www\./, "");
-  const title = meta(html, "og:title")[0] ?? html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim();
-  const description = meta(html, "og:description")[0] ?? meta(html, "description")[0] ?? "";
+  // A title is a line and a description a paragraph; anything longer is cut before it is searched.
+  const title = (meta(html, "og:title")[0] ?? html.match(/<title[^<>]*>([^<]*)<\/title>/i)?.[1]?.trim())?.slice(0, 300);
+  const description = (meta(html, "og:description")[0] ?? meta(html, "description")[0] ?? "").slice(0, 2_000);
   const text = `${title ?? ""} | ${description}`;
 
   // Price: meta text first, then the listing's embedded JSON (portals put
@@ -260,37 +288,19 @@ export function addressFromUrl(url: string): string | undefined {
   return undefined;
 }
 
-export async function fetchListing(url: string, timeoutMs = 8000): Promise<ListingInfo> {
-  const host = new URL(url).hostname.replace(/^www\./, "");
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      headers: { "user-agent": UA, accept: "text/html,application/xhtml+xml" },
-      signal: controller.signal,
-      redirect: "follow",
-    });
-    const html = await res.text();
-    if (!res.ok) {
-      return { url, host, fetched: false, note: `${host} returned ${res.status}. Upload the listing photos instead.`, address: addressFromUrl(url), photos: [] };
-    }
-    return parseListingHtml(url, html);
-  } catch (err) {
-    const why = err instanceof Error && err.name === "AbortError" ? "timed out" : "could not be reached";
-    return { url, host, fetched: false, note: `${host} ${why}. Upload the listing photos instead.`, address: addressFromUrl(url), photos: [] };
-  } finally {
-    clearTimeout(timer);
-  }
-}
+/** A listing page's visible text is a few thousand characters; the facts are near the top. */
+const MAX_PAGE_TEXT_CHARS = 200_000;
 
 /** Facts from free text (a copied listing page): price, beds, baths, sqft, address. */
 export function parseListingText(text: string): Pick<ListingInfo, "price" | "beds" | "baths" | "sqft" | "address"> {
-  const t = text.replace(/\s+/g, " ");
+  const t = text.slice(0, MAX_PAGE_TEXT_CHARS).replace(/\s+/g, " ");
   const price = num(t.match(/\$\s?([0-9]{3}(?:,[0-9]{3}){1,2})(?!\s*\/\s*(?:mo|month|sqft))/)?.[1]);
   const beds = num(t.match(/([0-9]+(?:\.[0-9])?)\s*(?:bd|bds|beds?|bedrooms?)\b/i)?.[1]);
   const baths = num(t.match(/([0-9]+(?:\.[0-9])?)\s*(?:ba|baths?|bathrooms?)\b/i)?.[1]);
   const sqft = num(t.match(/([0-9]{1,2},?[0-9]{3})\s*(?:sq\.?\s?ft|sqft|square feet)\b/i)?.[1]);
-  const address = t.match(/\d+\s+[A-Za-z0-9 .'#-]+?,\s*[A-Za-z .'-]+,\s*[A-Z]{2}\s*\d{5}/)?.[0];
+  // Bounded runs: a street is not 80 characters long, a city not 60. Unbounded, a long text
+  // with digits and no commas made every digit scan to the end of it.
+  const address = t.match(/\d{1,8} [A-Za-z0-9 .'#-]{1,80}?, ?[A-Za-z .'-]{1,60}, ?[A-Z]{2} ?\d{5}/)?.[0];
   return { price, beds, baths, sqft, address };
 }
 
@@ -300,7 +310,7 @@ export function parseListingText(text: string): Pick<ListingInfo, "price" | "bed
  * already has the page, so this is the reliable path for Zillow and Redfin.
  */
 export function parsePastedListing(html: string, text: string, pageUrl?: string): Omit<ListingInfo, "url" | "host" | "fetched"> {
-  const facts = parseListingText(text || html.replace(/<[^>]+>/g, " "));
+  const facts = parseListingText(text || html.replace(/<[^<>]+>/g, " "));
   const photos = html ? extractPhotos(html, pageUrl ?? "https://pasted.invalid/") : [];
   return { ...facts, address: facts.address ?? (pageUrl ? addressFromUrl(pageUrl) : undefined), photos };
 }
@@ -308,7 +318,7 @@ export function parsePastedListing(html: string, text: string, pageUrl?: string)
 /** Facts + photos from a full listing page the browser fetched for us. */
 export function parseFetchedListing(url: string, html: string): ListingInfo {
   const base = parseListingHtml(url, html);
-  const text = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<[^>]+>/g, " ");
+  const text = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<[^<>]+>/g, " ");
   const facts = parseListingText(text);
   return {
     ...base,

@@ -4,6 +4,8 @@ import { useCallback, useState } from "react";
 import type { Report } from "@/lib/engine/types";
 import { ReportView } from "@/components/report/report-view";
 import { VerdictBadge } from "@/components/ui/verdict";
+import { DemoBanner } from "@/components/ui/demo";
+import { isDemoProvider } from "@/lib/data/demo";
 import { SaveDealButton } from "@/components/app/save-deal-button";
 
 function Field(props: { id: string; label: string; value: string | number; onChange: (v: string) => void; placeholder?: string }) {
@@ -16,14 +18,16 @@ function Field(props: { id: string; label: string; value: string | number; onCha
 }
 
 /** Quick numbers: no photos, condition-tier rehab, editable assumptions. */
-export function Evaluator({ initial, initialWarning }: { initial: Report | null; initialWarning?: string }) {
+export function Evaluator({ initial, initialProvider }: { initial: Report | null; initialProvider: string }) {
   const [askingPrice, setAskingPrice] = useState(749000);
   const [rehab, setRehab] = useState<string>("");
   const [targetProfit, setTargetProfit] = useState(60000);
   const [holdingMonths, setHoldingMonths] = useState(6);
   const [rate, setRate] = useState(11);
   const [report, setReport] = useState<Report | null>(initial);
-  const [warning, setWarning] = useState<string | undefined>(initialWarning);
+  // Where the numbers on screen came from; "synthetic" is made-up data, and everything below is marked DEMO.
+  const [provider, setProvider] = useState(initialProvider);
+  const demo = isDemoProvider(provider);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -48,7 +52,7 @@ export function Evaluator({ initial, initialWarning }: { initial: Report | null;
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.statusText);
       setReport(json.report);
-      setWarning(json.warning);
+      setProvider(json.demo === false && typeof json.provider === "string" ? json.provider : "synthetic");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -70,16 +74,16 @@ export function Evaluator({ initial, initialWarning }: { initial: Report | null;
       </form>
 
       {error && <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-      {warning && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{warning}</p>}
+      {report && demo && <DemoBanner kind="quick" />}
 
       {report && (
         <section className="space-y-8">
           <div className="card flex flex-wrap items-center gap-4 p-5">
-            <VerdictBadge verdict={report.deal.verdict} size="lg" />
+            <VerdictBadge verdict={report.deal.verdict} size="lg" demo={demo} />
             <p className="flex-1 basis-80 text-lg leading-snug">{report.deal.decidingFactor}</p>
-            <SaveDealButton payload={{ report }} />
+            <SaveDealButton payload={{ report, provider }} />
           </div>
-          <ReportView report={report} hideVerdict />
+          <ReportView report={report} hideVerdict demo={demo} />
         </section>
       )}
     </div>

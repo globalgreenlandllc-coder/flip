@@ -1,178 +1,24 @@
-import { NextResponse } from "next/server";
-import { DEFAULT_DEAL_TERMS, DEFAULT_MARKET_CONFIG, estimateArv, evaluate } from "@/lib/engine";
-import type { DealInputs, PropertyFacts, RiskFlag } from "@/lib/engine";
-import { planRenovation } from "@/lib/engine/renovation";
+import { auth } from "@clerk/nextjs/server";
+import { createAnalyzeHandler } from "@/lib/api/analyze";
 import { getProviders } from "@/lib/data";
-import { analyzePhotos, MAX_PHOTOS, type PhotoInput } from "@/lib/vision/analyze-photos";
+import { fetchListing } from "@/lib/listing/read-listing";
+import { resolveByAddress } from "@/lib/listing/resolve";
+import { limitsFromEnv } from "@/lib/usage/limits";
+import { prismaUsageStore } from "@/lib/usage/prisma-store";
+import { analyzePhotos } from "@/lib/vision/analyze-photos";
 import { fetchPhotos } from "@/lib/vision/fetch-photo";
-import { fetchListing, type ListingInfo } from "@/lib/listing/fetch-listing";
-import { addressForBlocked, resolveByAddress } from "@/lib/listing/resolve";
 
 export const maxDuration = 120;
 
-/**
- * POST /api/v1/analyze
- *
- * Body:
- *   listingUrl?: string                  pasted listing link (meta tags only; portals often block)
- *   photos?: ({url} | {base64, mediaType})[]   listing photos, max 12
- *   subject?: Partial<PropertyFacts>     override any fact
- *   deal?: Partial<DealInputs>           override any assumption; askingPrice falls back to the listing price
- *   asOf?: string
- *
- * Runs: listing metadata -> Claude vision on the photos -> ARV + ceiling ->
- * renovation plan ranked by profit -> deal math with the plan's cost.
- */
-export async function POST(req: Request) {
-  let body: {
-    listingUrl?: string;
-    /** A listing the browser already read (flip extension or pasted page). Skips the server fetch. */
-    listing?: ListingInfo;
-    photos?: PhotoInput[];
-    subject?: Partial<PropertyFacts>;
-    deal?: Partial<DealInputs>;
-    asOf?: string;
-  };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Body must be JSON." }, { status: 400 });
-  }
-
-  let listing: ListingInfo | null = null;
-  if (body.listing && typeof body.listing.url === "string" && Array.isArray(body.listing.photos)) {
-    const l = body.listing;
-    listing = {
-      url: l.url,
-      host: String(l.host ?? ""),
-      fetched: Boolean(l.fetched),
-      note: typeof l.note === "string" ? l.note : undefined,
-      title: typeof l.title === "string" ? l.title : undefined,
-      address: typeof l.address === "string" ? l.address : undefined,
-      price: typeof l.price === "number" ? l.price : undefined,
-      beds: typeof l.beds === "number" ? l.beds : undefined,
-      baths: typeof l.baths === "number" ? l.baths : undefined,
-      sqft: typeof l.sqft === "number" ? l.sqft : undefined,
-      photos: l.photos.filter((u): u is string => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, MAX_PHOTOS),
-    };
-  } else if (body.listingUrl) {
-    try {
-      new URL(body.listingUrl);
-    } catch {
-      return NextResponse.json({ error: "`listingUrl` is not a valid URL." }, { status: 400 });
-    }
-    listing = await fetchListing(body.listingUrl);
-    // Portal blocked the server: read the same MLS listing from a site that serves it.
-    if (!listing.fetched) {
-      const address = addressForBlocked(listing);
-      const alt = address ? await resolveByAddress(address, listing.host) : null;
-      if (alt) {
-        listing = { ...alt, url: listing.url, host: listing.host, fetched: true, note: alt.readFrom.reason };
-      }
-    }
-  }
-
-  // Uploaded photos first, then everything the listing page exposes, then
-  // pasted links. Remote images are fetched here so a CDN that refuses
-  // Claude's fetch, or one dead link, cannot sink the whole run.
-  const uploaded = (body.photos ?? []).filter((p): p is Extract<PhotoInput, { base64: string }> => "base64" in p);
-  const remoteUrls = [
-    ...(listing?.photos ?? []),
-    ...(body.photos ?? []).filter((p): p is { url: string } => "url" in p).map((p) => p.url),
-  ].filter((u, i, arr) => arr.indexOf(u) === i);
-  const { photos: remote, failed } = await fetchPhotos(remoteUrls.slice(0, MAX_PHOTOS));
-  const photos = [...uploaded, ...remote].slice(0, MAX_PHOTOS);
-  const photosUsed = { uploaded: Math.min(uploaded.length, MAX_PHOTOS), fromListing: Math.min(remote.length, Math.max(0, MAX_PHOTOS - uploaded.length)), failed: failed.length };
-  if (photos.length === 0) {
-    const error = listing && !listing.fetched
-      ? `${listing.host} would not let us read the page${listing.address ? ` for ${listing.address}` : ""}. On the listing page press ⌘A then ⌘C, paste into this form, and run it again. Or drag the gallery photos into the drop zone and enter the asking price.`
-      : remoteUrls.length
-        ? "None of the photo links could be fetched. Upload the photos instead."
-        : "No photos. Upload the listing photos or pass photo URLs.";
-    console.warn("[analyze] 400 no photos", { host: listing?.host, fetched: listing?.fetched, pagePhotos: listing?.photos.length ?? 0, remoteUrls: remoteUrls.length, failed: failed.length, uploaded: uploaded.length });
-    return NextResponse.json({ error, listing }, { status: 400 });
-  }
-
-  const providers = getProviders();
-  const asOf = body.asOf ?? new Date().toISOString().slice(0, 10);
-  const base = await providers.parcels.lookup(listing?.address ?? body.subject?.id ?? "demo");
-  if (!base) return NextResponse.json({ error: "Could not resolve the property." }, { status: 400 });
-
-  const facts: PropertyFacts = {
-    ...base,
-    ...(listing?.sqft ? { sqft: listing.sqft } : {}),
-    ...(listing?.beds ? { beds: listing.beds } : {}),
-    ...(listing?.baths ? { baths: listing.baths } : {}),
-    ...body.subject,
-  };
-
-  const askingPrice = body.deal?.askingPrice ?? listing?.price;
-  if (typeof askingPrice !== "number" || !(askingPrice > 0)) {
-    console.warn("[analyze] 400 no asking price", { host: listing?.host, fetched: listing?.fetched });
-    return NextResponse.json({ error: listing ? "The listing did not give up its price. Enter the asking price and run it again." : "Enter the asking price.", listing }, { status: 400 });
-  }
-
-  let assessment;
-  try {
-    assessment = await analyzePhotos(photos, {
-      address: listing?.address,
-      sqft: facts.sqft,
-      beds: facts.beds,
-      baths: facts.baths,
-      yearBuilt: facts.yearBuilt,
-      submarket: facts.submarket,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: `Photo analysis failed: ${message}`, listing }, { status: 502 });
-  }
-
-  const subject: PropertyFacts = { ...facts, condition: assessment.overallCondition };
-  const sales = await providers.sales.salesNear(subject, 2.5, 18, asOf);
-  const arv = estimateArv(subject, sales, asOf, DEFAULT_MARKET_CONFIG);
-  if (Number.isNaN(arv.point)) {
-    return NextResponse.json({ error: "No usable comps for this property.", listing, assessment }, { status: 422 });
-  }
-
-  const plan = planRenovation({
-    subject,
-    currentCondition: assessment.overallCondition,
-    needs: assessment.categoryNeeds,
-    // Comp-based (uncapped) ARV on purpose: the planner derives the as-is
-    // value from it and lets the ceiling decide how much of the uplift the
-    // block will pay for. Passing the already-capped arv.point made the
-    // ceiling shrink every item a little instead of skipping the ones that
-    // would not come back.
-    arvPoint: arv.compBased,
-    ceiling: arv.ceiling,
-    config: DEFAULT_MARKET_CONFIG,
-  });
-
-  const report = evaluate({
-    subject,
-    sales,
-    asOf,
-    config: DEFAULT_MARKET_CONFIG,
-    deal: { ...DEFAULT_DEAL_TERMS, ...body.deal, askingPrice, rehab: plan.rehab.likely },
-  });
-
-  const photoFlags: RiskFlag[] = [
-    ...assessment.redFlags.map((m) => ({ code: "PHOTO_RED_FLAG", message: m })),
-    ...assessment.unknowns.map((m) => ({ code: "VERIFY_ON_SITE", message: m })),
-  ];
-  report.riskFlags = [...photoFlags, ...report.riskFlags];
-  report.narrative.splice(1, 0,
-    `Photos: ${assessment.summary}`,
-    `Renovation: $${Math.round(plan.totals.costLikely).toLocaleString("en-US")} likely (${Math.round(plan.totals.costLow).toLocaleString("en-US")} to ${Math.round(plan.totals.costHigh).toLocaleString("en-US")}) adds about $${Math.round(plan.totals.valueAdded).toLocaleString("en-US")}. ${plan.finishAdvice}`,
-  );
-
-  return NextResponse.json({
-    provider: providers.name,
-    warning: providers.name === "synthetic" ? "Synthetic market data. ARV, ceiling and comps are not real; the photo assessment is." : undefined,
-    listing,
-    photosUsed,
-    assessment,
-    plan,
-    report,
-  });
-}
+/** POST /api/v1/analyze. What it accepts and does is in lib/api/analyze.ts; this file plugs in the real session, database, network and AI. */
+export const POST = createAnalyzeHandler({
+  userId: async () => (await auth()).userId,
+  usage: prismaUsageStore,
+  limits: () => limitsFromEnv(),
+  now: () => new Date(),
+  providers: getProviders,
+  fetchListing: (url) => fetchListing(url),
+  resolveByAddress,
+  fetchPhotos,
+  readPhotos: analyzePhotos,
+});

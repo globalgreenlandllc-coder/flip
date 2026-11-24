@@ -2,7 +2,9 @@ import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 import { VerdictBadge } from "@/components/ui/verdict";
+import { DemoBanner } from "@/components/ui/demo";
 import { money } from "@/components/report/report-view";
+import { isDemoProvider } from "@/lib/data/demo";
 import type { Verdict } from "@/lib/engine/types";
 
 export const metadata = { title: "Deals" };
@@ -10,7 +12,15 @@ export const dynamic = "force-dynamic";
 
 export default async function DealsPage() {
   const { userId } = await auth();
-  const deals = userId ? await db.deal.findMany({ where: { userId }, orderBy: { createdAt: "desc" } }) : [];
+  // The list needs the summary columns only; a deal's full payload is read when it is opened.
+  const deals = userId
+    ? await db.deal.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, title: true, source: true, askingPrice: true, verdict: true, arv: true, maxOffer: true, profit: true, provider: true, createdAt: true },
+      })
+    : [];
+  const anyDemo = deals.some((d) => isDemoProvider(d.provider));
 
   return (
     <div>
@@ -29,6 +39,8 @@ export default async function DealsPage() {
           <Link href="/app" className="btn-primary mt-6 text-sm">Analyze a house</Link>
         </div>
       ) : (
+        <div className="space-y-4">
+        {anyDemo && <DemoBanner kind="list" />}
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-ink-100/60 text-left text-xs uppercase tracking-wide text-ink-500">
@@ -49,7 +61,7 @@ export default async function DealsPage() {
                     <Link href={`/app/deals/${d.id}`} className="font-medium hover:underline">{d.title}</Link>
                     {d.source && <div className="max-w-xs truncate text-xs text-ink-500">{d.source}</div>}
                   </td>
-                  <td className="px-4 py-3"><VerdictBadge verdict={d.verdict as Verdict} size="sm" /></td>
+                  <td className="px-4 py-3"><VerdictBadge verdict={d.verdict as Verdict} size="sm" demo={isDemoProvider(d.provider)} /></td>
                   <td className="px-4 py-3 text-right tabular-nums">{money(d.askingPrice)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{money(d.arv)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{money(d.maxOffer)}</td>
@@ -59,6 +71,7 @@ export default async function DealsPage() {
               ))}
             </tbody>
           </table>
+        </div>
         </div>
       )}
     </div>

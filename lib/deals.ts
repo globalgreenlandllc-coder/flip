@@ -9,7 +9,12 @@ export interface DealPayload {
   plan?: RenovationPlan;
   assessment?: PhotoAssessment;
   listing?: ListingInfo | null;
+  /** Where the market data behind the numbers came from, as the API reported it ("synthetic" = demo). */
+  provider?: string;
 }
+
+/** The most deals one person can keep. A ceiling on the table, far above what a person saves by hand. */
+export const MAX_SAVED_DEALS = 500;
 
 export function dealTitle(payload: DealPayload): string {
   const s = payload.report.subject;

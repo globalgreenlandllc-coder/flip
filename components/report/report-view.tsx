@@ -1,24 +1,34 @@
 import type { Report } from "@/lib/engine/types";
 import { VerdictBadge } from "@/components/ui/verdict";
+import { DemoTag } from "@/components/ui/demo";
+
+/** Risk flags that come from the photos. Every other flag is worked out from the property record and the sales. */
+const FROM_PHOTOS = new Set(["PHOTO_RED_FLAG", "VERIFY_ON_SITE"]);
 
 export const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 export const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 
-export function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "good" | "bad" }) {
+export function Stat({ label, value, sub, tone, demo = false }: { label: string; value: string; sub?: string; tone?: "good" | "bad"; demo?: boolean }) {
   return (
     <div className="card p-4">
-      <div className="text-xs font-medium uppercase tracking-wide text-ink-500">{label}</div>
+      <div className="flex items-center justify-between gap-2 text-xs font-medium uppercase tracking-wide text-ink-500">
+        {label}
+        {demo && <DemoTag />}
+      </div>
       <div className={`mt-1 text-2xl font-semibold tracking-tight ${tone === "bad" ? "text-pass" : tone === "good" ? "text-go" : ""}`}>{value}</div>
       {sub && <div className="mt-1 text-xs text-ink-500">{sub}</div>}
     </div>
   );
 }
 
-export function Block({ title, children, aside }: { title: string; children: React.ReactNode; aside?: React.ReactNode }) {
+export function Block({ title, children, aside, demo = false }: { title: string; children: React.ReactNode; aside?: React.ReactNode; demo?: boolean }) {
   return (
     <div>
       <div className="mb-2 flex items-baseline justify-between gap-4">
-        <h2 className="text-base font-semibold">{title}</h2>
+        <h2 className="text-base font-semibold">
+          {title}
+          {demo && <DemoTag className="ml-2" />}
+        </h2>
         {aside}
       </div>
       {children}
@@ -35,30 +45,38 @@ function Row({ k, v, bold }: { k: string; v: string; bold?: boolean }) {
   );
 }
 
-/** The full report body. The verdict row can be hidden when the caller renders its own header. */
-export function ReportView({ report, hideVerdict = false }: { report: Report; hideVerdict?: boolean }) {
+/**
+ * The full report body. The verdict row can be hidden when the caller renders
+ * its own header. `demo` marks every number that comes from made-up sales.
+ */
+export function ReportView({ report, hideVerdict = false, demo = false }: { report: Report; hideVerdict?: boolean; demo?: boolean }) {
   const { subject, arv, deal, riskFlags } = report;
   return (
     <section className="space-y-8">
       {!hideVerdict && (
         <div className="flex flex-wrap items-center gap-4">
-          <VerdictBadge verdict={deal.verdict} size="lg" />
+          <VerdictBadge verdict={deal.verdict} size="lg" demo={demo} />
           <p className="max-w-2xl text-lg">{deal.decidingFactor}</p>
         </div>
       )}
 
       <p className="text-sm text-ink-500">
         Subject: {subject.sqft.toLocaleString()} sqft · {subject.beds} bd / {subject.baths} ba · built {subject.yearBuilt} · {subject.condition} · {subject.submarket}
+        {demo && (
+          <>
+            <DemoTag className="ml-2" /> <span className="text-xs">the year built, the area and anything the listing did not give are from a made-up property record</span>
+          </>
+        )}
       </p>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="ARV" value={money(arv.point)} sub={`${money(arv.low)} – ${money(arv.high)} · ${arv.confidence}${arv.cappedByCeiling ? " · capped" : ""}`} />
-        <Stat label="Max offer" value={money(deal.maxAllowableOffer)} sub={`asking is ${money(Math.abs(deal.askingVsMao))} ${deal.askingVsMao > 0 ? "above" : "below"}`} tone={deal.askingVsMao > 0 ? "bad" : "good"} />
-        <Stat label="Profit at asking" value={money(deal.profit)} sub={Number.isNaN(deal.roi) ? undefined : `${Math.round(deal.roi * 100)}% on cash`} tone={deal.profit < 0 ? "bad" : undefined} />
-        <Stat label="Ceiling" value={arv.ceiling ? money(arv.ceiling.value) : "unknown"} sub={arv.ceiling ? `${money(arv.ceiling.pricePerSqft)}/sqft · n=${arv.ceiling.sampleSize}` : "thin submarket sample"} />
+        <Stat demo={demo} label="ARV" value={money(arv.point)} sub={`${money(arv.low)} – ${money(arv.high)} · ${arv.confidence}${arv.cappedByCeiling ? " · capped" : ""}`} />
+        <Stat demo={demo} label="Max offer" value={money(deal.maxAllowableOffer)} sub={`asking is ${money(Math.abs(deal.askingVsMao))} ${deal.askingVsMao > 0 ? "above" : "below"}`} tone={deal.askingVsMao > 0 ? "bad" : "good"} />
+        <Stat demo={demo} label="Profit at asking" value={money(deal.profit)} sub={Number.isNaN(deal.roi) ? undefined : `${Math.round(deal.roi * 100)}% on cash`} tone={deal.profit < 0 ? "bad" : undefined} />
+        <Stat demo={demo} label="Ceiling" value={arv.ceiling ? money(arv.ceiling.value) : "unknown"} sub={arv.ceiling ? `${money(arv.ceiling.pricePerSqft)}/sqft · n=${arv.ceiling.sampleSize}` : "thin submarket sample"} />
       </div>
 
-      <Block title="Why">
+      <Block title="Why" demo={demo}>
         <ol className="list-decimal space-y-1.5 pl-5 text-[15px] leading-relaxed">
           {report.narrative.map((n, i) => (
             <li key={i}>{n}</li>
@@ -66,7 +84,7 @@ export function ReportView({ report, hideVerdict = false }: { report: Report; hi
         </ol>
       </Block>
 
-      <Block title={`Comps (${arv.comps.length}) within ${arv.criteriaUsed.radiusMiles} mi / ${arv.criteriaUsed.months} mo`}>
+      <Block demo={demo} title={`Comps (${arv.comps.length}) within ${arv.criteriaUsed.radiusMiles} mi / ${arv.criteriaUsed.months} mo`}>
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-ink-100/60 text-left text-xs uppercase tracking-wide text-ink-500">
@@ -96,7 +114,7 @@ export function ReportView({ report, hideVerdict = false }: { report: Report; hi
       </Block>
 
       <div className="grid gap-8 md:grid-cols-2">
-        <Block title="Deal">
+        <Block title="Deal" demo={demo}>
           <div className="card p-4">
             <table className="w-full text-sm">
               <tbody>
@@ -113,7 +131,7 @@ export function ReportView({ report, hideVerdict = false }: { report: Report; hi
           </div>
         </Block>
 
-        <Block title="Sensitivity: profit">
+        <Block title="Sensitivity: profit" demo={demo}>
           <div className="card p-4">
             <table className="w-full text-sm">
               <thead className="text-xs uppercase tracking-wide text-ink-500">
@@ -147,7 +165,11 @@ export function ReportView({ report, hideVerdict = false }: { report: Report; hi
             {riskFlags.map((f, i) => (
               <li key={i} className="flex gap-3 px-4 py-2.5 text-sm">
                 <span className="mt-0.5 h-fit shrink-0 rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[11px] text-ink-700">{f.code}</span>
-                <span>{f.message}</span>
+                <span>
+                  {f.message}
+                  {/* A flag worked out from the made-up record or sales is as made up as they are; one read off the photos is real. */}
+                  {demo && !FROM_PHOTOS.has(f.code) && <DemoTag className="ml-2" />}
+                </span>
               </li>
             ))}
           </ul>

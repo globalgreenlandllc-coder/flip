@@ -21,8 +21,36 @@ model Deal {
   arv         Float
   maxOffer    Float
   profit      Float
-  /// JSON: { report, plan?, assessment?, listing? }
+  /// Where the market data behind the numbers came from. "synthetic" or empty = demo numbers (lib/data isDemoProvider).
+  provider    String?
+  /// JSON: { report, plan?, assessment?, listing?, provider? }
   payload     String
 
   @@index([userId, createdAt])
+}
+
+/// One run of a full analysis or of Quick Numbers. This is what the
+/// per-person limits count (lib/usage/limits.ts), and the record of what each
+/// analysis cost in AI tokens.
+model UsageRun {
+  id           String   @id @default(cuid())
+  userId       String
+  createdAt    DateTime @default(now())
+  /// "analyze" (photos + AI) or "quick" (numbers only)
+  kind         String
+  /// "started" | "ok" | "failed" (the AI answered, then something went wrong) | "free" (no answer from the AI: not paid for).
+  /// A run turned away by a limit leaves no row.
+  status       String   @default("started")
+  /// Host of the listing site the run started from, if any.
+  source       String?
+  photos       Int      @default(0)
+  /// AI model that read the photos, and what it used.
+  model        String?
+  inputTokens  Int?
+  outputTokens Int?
+  /// Wall-clock time of the whole run.
+  ms           Int?
+
+  @@index([userId, createdAt])
+  @@index([kind, createdAt])
 }

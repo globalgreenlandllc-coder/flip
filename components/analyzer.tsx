@@ -12,12 +12,19 @@ import { ReportView } from "@/components/report/report-view";
 import { PlanView } from "@/components/report/plan-view";
 import { AssessmentView, ListingCard } from "@/components/report/assessment-view";
 import { VerdictBadge } from "@/components/ui/verdict";
+import { DemoBanner } from "@/components/ui/demo";
 import { SaveDealButton } from "@/components/app/save-deal-button";
+import type { UsageSummary } from "@/lib/usage/limits";
 
 interface AnalyzeResponse {
+  /** Where the market data came from; `demo` is true while it is made up. */
+  provider?: string;
+  demo?: boolean;
   warning?: string;
+  /** This person's month after the run. */
+  usage?: UsageSummary;
   listing: ListingInfo | null;
-  photosUsed?: { uploaded: number; fromListing: number; failed: number };
+  photosUsed?: { uploaded: number; fromListing: number; failed: number; leftOut?: number };
   assessment: PhotoAssessment;
   plan: RenovationPlan;
   report: Report;
@@ -43,7 +50,8 @@ async function toJpeg(file: File, maxEdge = 1280): Promise<{ base64: string; med
 
 type PastedSummary = { address?: string; beds?: number; baths?: number; sqft?: number; photos: number; source: "paste" | "bookmark" | "extension" };
 
-export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
+export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; initialUsage?: UsageSummary | null }) {
+  const [usage, setUsage] = useState<UsageSummary | null>(initialUsage ?? null);
   const [listingUrl, setListingUrl] = useState(prefill?.listingUrl ?? "");
   const [photoUrls, setPhotoUrls] = useState(prefill?.photos.join("\n") ?? "");
   const [showLinks, setShowLinks] = useState(Boolean(prefill?.photos.length));
@@ -159,6 +167,8 @@ export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
       } catch {
         json = null;
       }
+      // A finished run and a turned-away one (429) both say where the month stands.
+      if (json?.usage) setUsage(json.usage);
       if (!res.ok || !json) {
         if (res.status === 413) throw new Error("The photos are too large for one request. Use fewer or smaller photos.");
         if (res.status === 400 && json?.listing && json.listing.fetched === false) {
@@ -197,6 +207,9 @@ export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
     }
     if (tag !== "INPUT" && tag !== "TEXTAREA" && addUrls(text)) e.preventDefault();
   }
+
+  // A result that does not say it is real is treated as a demo.
+  const demo = result ? result.demo !== false : false;
 
   return (
     <div className="space-y-8">
@@ -299,6 +312,11 @@ export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
                 "Analyze this house"
               )}
             </button>
+            {usage && (
+              <p data-usage className={`-mt-2 text-center text-xs ${usage.used >= usage.limit ? "font-medium text-pass" : "text-ink-500"}`}>
+                {usage.used} of {usage.limit} analyses used this month
+              </p>
+            )}
           </div>
         </div>
       </form>
@@ -342,12 +360,12 @@ export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
 
       {result && (
         <section className="space-y-8">
-          {result.warning && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{result.warning}</p>}
+          {demo && <DemoBanner />}
 
           <div className="card flex flex-wrap items-center gap-4 p-5">
-            <VerdictBadge verdict={result.report.deal.verdict} size="lg" />
+            <VerdictBadge verdict={result.report.deal.verdict} size="lg" demo={demo} />
             <p className="flex-1 basis-80 text-lg leading-snug">{result.report.deal.decidingFactor}</p>
-            <SaveDealButton payload={{ report: result.report, plan: result.plan, assessment: result.assessment, listing: result.listing }} />
+            <SaveDealButton payload={{ report: result.report, plan: result.plan, assessment: result.assessment, listing: result.listing, provider: result.provider }} />
           </div>
 
           {result.listing && <ListingCard listing={result.listing} />}
@@ -356,12 +374,13 @@ export function Analyzer({ prefill }: { prefill?: Prefill | null }) {
               Looked at {result.photosUsed.uploaded + result.photosUsed.fromListing} photos
               {result.photosUsed.uploaded ? ` · ${result.photosUsed.uploaded} uploaded` : ""}
               {result.photosUsed.fromListing ? ` · ${result.photosUsed.fromListing} from the listing` : ""}
-              {result.photosUsed.failed ? ` · ${result.photosUsed.failed} could not be fetched` : ""}.
+              {result.photosUsed.failed ? ` · ${result.photosUsed.failed} could not be fetched` : ""}
+              {result.photosUsed.leftOut ? ` · ${result.photosUsed.leftOut} left out to stay under the size the photo reading takes` : ""}.
             </p>
           )}
           <AssessmentView assessment={result.assessment} />
-          <PlanView plan={result.plan} />
-          <ReportView report={result.report} hideVerdict />
+          <PlanView plan={result.plan} demo={demo} />
+          <ReportView report={result.report} hideVerdict demo={demo} />
         </section>
       )}
     </div>

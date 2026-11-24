@@ -1,4 +1,5 @@
-import { addressFromUrl, fetchListing, type ListingInfo } from "./fetch-listing";
+import { addressFromUrl, type ListingInfo } from "./fetch-listing";
+import { fetchListing } from "./read-listing";
 
 /**
  * When a portal blocks the server (Zillow, Redfin, Realtor, Trulia), find the
