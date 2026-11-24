@@ -17,7 +17,6 @@ export default async function QuickNumbersPage() {
     const sales = await providers.sales.salesNear(subject, 2.5, 18, asOf);
     initial = evaluate({ subject, sales, asOf, config: DEFAULT_MARKET_CONFIG, deal: { ...DEFAULT_DEAL_TERMS, askingPrice: DEMO_ASKING_PRICE } });
   }
-  const warning = providers.name === "synthetic" ? "Synthetic market data. Numbers are for exercising the engine only." : undefined;
 
   return (
     <div>
@@ -25,7 +24,7 @@ export default async function QuickNumbersPage() {
         <h1 className="text-2xl font-bold tracking-tight">Quick numbers</h1>
         <p className="mt-1 text-ink-700">No photos, just the deal math with a condition-tier rehab estimate. Change any assumption and re-run.</p>
       </div>
-      <Evaluator initial={initial} initialWarning={warning} />
+      <Evaluator initial={initial} initialProvider={providers.name} />
     </div>
   );
 }

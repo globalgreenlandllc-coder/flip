@@ -10,9 +10,9 @@ const ACTION_STYLE: Record<PlanItem["action"], string> = {
   skip: "bg-ink-100 text-ink-500",
 };
 
-export function PlanView({ plan }: { plan: RenovationPlan }) {
+export function PlanView({ plan, demo = false }: { plan: RenovationPlan; demo?: boolean }) {
   return (
-    <Block title="What to remodel, ranked by profit">
+    <Block title="What to remodel, ranked by profit" demo={demo}>
       <p className="mb-3 text-sm text-ink-700">
         As-is about {money(plan.asIsValue)}. Renovation can add up to {money(plan.uplift)}
         {Number.isFinite(plan.headroom) ? `, and the block will pay for about ${money(plan.headroom)} of it` : ""}.{" "}
@@ -63,6 +63,10 @@ export function PlanView({ plan }: { plan: RenovationPlan }) {
           </tfoot>
         </table>
       </div>
+      <p className="mt-2 text-xs text-ink-500">
+        Costs are placeholder contractor rates for the Seattle area, not quotes for this house.
+        {demo ? " What each item adds comes from the demo sales, so it is not real either." : ""}
+      </p>
     </Block>
   );
 }

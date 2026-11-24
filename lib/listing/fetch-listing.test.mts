@@ -174,3 +174,40 @@ test("estately: address slugs and photo variants", async () => {
     "https://images.estately.net/139_NWM2573452_1_1788304050_636x435.jpg",
   ]);
 });
+
+test("a page built to be slow to read is read in one pass", () => {
+  // Each of these took seconds per 100 KB before the patterns stopped crossing tag boundaries
+  // (and minutes at this size). A hostile site can serve any of them behind a pasted link.
+  const size = 2_000_000;
+  const shapes: Record<string, string> = {
+    "unclosed <meta": "<meta ".repeat(size / 6),
+    "unclosed <img": "<img ".repeat(size / 5),
+    "unclosed <title": "<title ".repeat(size / 7),
+    "unclosed JSON-LD scripts": `<script type="application/ld+json">`.repeat(Math.floor(size / 35)),
+    "one endless tag": "<meta " + "a=1 ".repeat(size / 4),
+    "thousands of different photos": "<html><body>" + Array.from({ length: 30_000 }, (_, i) => `<img src="https://c.example/photo/${i}.jpg">`).join("") + "</body></html>",
+    "a title with digits and no commas": `<title>${"1 a ".repeat(size / 4)}</title>`,
+  };
+  for (const [name, html] of Object.entries(shapes)) {
+    const started = process.hrtime.bigint();
+    const info = parseListingHtml("https://example.com/listing", html);
+    const ms = Number(process.hrtime.bigint() - started) / 1e6;
+    assert.ok(ms < 1_500, `${name}: ${Math.round(ms)} ms`);
+    assert.ok(info.photos.length <= 16, name);
+  }
+  // The same for text copied off a page.
+  const started = process.hrtime.bigint();
+  parseListingText("1 a ".repeat(500_000));
+  assert.ok(Number(process.hrtime.bigint() - started) / 1e6 < 1_500, "long text with digits and no commas");
+});
+
+test("JSON-LD is still read when the page is well-formed, upper-case tags and all", () => {
+  const html = `<html><head>
+    <SCRIPT TYPE="application/ld+json">{"@type":"Product","image":["https://photos.example.com/a.jpg","https://photos.example.com/b.jpg"],"offers":{"price":512000}}</SCRIPT>
+    <script>var notJson = 1;</script>
+    <script type="application/ld+json">not json at all</script>
+  </head><body></body></html>`;
+  const info = parseListingHtml("https://example.com/listing", html);
+  assert.deepEqual(info.photos, ["https://photos.example.com/a.jpg", "https://photos.example.com/b.jpg"]);
+  assert.equal(info.price, 512_000);
+});

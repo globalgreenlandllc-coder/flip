@@ -11,10 +11,11 @@ export function SaveDealButton({ payload }: { payload: DealPayload }) {
   async function onSave() {
     setState({ status: "saving" });
     try {
-      const { id } = await saveDeal(payload);
-      setState({ status: "saved", id });
-    } catch (err) {
-      setState({ status: "error", message: err instanceof Error ? err.message : String(err) });
+      const result = await saveDeal(payload);
+      setState(result.ok ? { status: "saved", id: result.id } : { status: "error", message: result.error });
+    } catch {
+      // The action itself did not come back (offline, a server fault): its own words would be a digest, not a sentence.
+      setState({ status: "error", message: "Could not save just now. Try again." });
     }
   }
 

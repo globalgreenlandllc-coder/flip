@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
-    "test": "tsx --test lib/engine/*.test.mts lib/listing/*.test.mts",
+    "test": "tsx --test lib/engine/*.test.mts lib/listing/*.test.mts lib/net/*.test.mts lib/usage/*.test.mts lib/vision/*.test.mts lib/api/*.test.mts",
     "demo": "tsx scripts/demo.mts",
     "backtest": "tsx scripts/backtest.mts",
     "postinstall": "prisma generate",

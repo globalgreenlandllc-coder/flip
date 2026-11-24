@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { auth } from "@clerk/nextjs/server";
+import { limitsFromEnv } from "@/lib/usage/limits";
 import { Logo } from "@/components/ui/logo";
 import { VerdictBadge } from "@/components/ui/verdict";
 import { HeroCard } from "@/components/landing/hero-card";
@@ -28,13 +29,13 @@ const STEPS = [
 const AUDIENCES = [
   { t: "Contractors", d: "You already know what a kitchen costs. flip tells you what the block will pay for it, so you can bring a deal to an investor with a report and win the renovation.", icon: "M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" },
   { t: "Investors", d: "Stop losing money on ARV. Every comp and every adjustment is on the page, the ceiling is enforced, and the max offer is solved for your target profit.", icon: "M3 17l6-6 4 4 8-8M14 7h7v7" },
-  { t: "Agents & lenders", d: "Score every listing your investor clients look at. White-label reports for agents, an API for platforms, and a published accuracy number for your metro.", icon: "M4 4h16v12H5.5L4 17.5V4zM8 9h8M8 12h5" },
+  { t: "Agents & lenders", d: "Score every listing your investor clients look at. Planned: white-label reports for agents, an API for platforms, and a published accuracy number for your metro.", icon: "M4 4h16v12H5.5L4 17.5V4zM8 9h8M8 12h5" },
 ];
 
 const FAQ = [
   { q: "Is this an appraisal?", a: "No. It is a decision tool built the way a good appraiser and a good flipper think: comps with visible adjustments, a ceiling for the neighborhood, and deal math with every assumption editable. Verify before you close." },
-  { q: "Where do the comps come from?", a: "Public assessor and recorded-sale data, and MLS data where we have a licensed feed. We do not scrape listing portals. The listing link is read for its public page details and photos only." },
-  { q: "How accurate is the ARV?", a: "We backtest against completed flips in each metro before we turn it on there: the model sees only what was known on purchase day, and we compare its ARV to the actual resale. The accuracy number for your metro is on your dashboard." },
+  { q: "Where do the comps come from?", a: "In this beta they are demo data: the sales behind the resale numbers are made up, and every number built on them is marked DEMO. Real recorded-sale data is being connected next, one area at a time. The photo reading is real today." },
+  { q: "How accurate is the ARV?", a: "Not measured yet, because the beta runs on demo sales. Before real numbers are turned on in an area, the model is tested against completed flips there: it sees only what was known on purchase day, and its ARV is compared with the actual resale. That measured accuracy will be shown beside every ARV." },
   { q: "What if the listing site blocks the link?", a: "Some portals block automated reads some of the time. When that happens the page says so and you drop the photos in directly. Everything else works the same." },
   { q: "Who can see my deals?", a: "Only you, and anyone you share a report with. Photos are analyzed and not used for anything else." },
 ];
@@ -145,6 +146,8 @@ export default async function Landing() {
   const signedIn = Boolean(userId);
   const primaryHref = signedIn ? "/app" : "/sign-up";
   const primaryLabel = signedIn ? "Open the app" : "Analyze your first house free";
+  // The number on the page is the number that is enforced.
+  const { monthlyAnalyses } = limitsFromEnv();
 
   return (
     <div className="flex-1">
@@ -168,7 +171,9 @@ export default async function Landing() {
               <Link href={primaryHref} className="btn-primary px-5 py-3">{primaryLabel}</Link>
               <a href="#report" className="btn-secondary px-5 py-3">See a report</a>
             </div>
-            <p className="fade-up mt-4 text-xs text-ink-500" style={{ animationDelay: "220ms" }}>No card. Free during beta. About a minute per house.</p>
+            <p className="fade-up mt-4 max-w-xl text-xs leading-relaxed text-ink-500" style={{ animationDelay: "220ms" }}>
+              No card. Free during beta. About a minute per house. In the beta the photo reading is real; the sales behind the resale numbers are demo data, and every number built on them is marked DEMO.
+            </p>
             <div className="fade-up mt-10 grid gap-2 text-sm text-ink-700 sm:grid-cols-3 lg:grid-cols-1" style={{ animationDelay: "260ms" }}>
               {([["GO", "the money works, even at ARV −10%"], ["TIGHT", "works at asking, not at your target"], ["PASS", "you would lose money"]] as const).map(([v, t]) => (
                 <div key={v} className="flex items-center gap-2.5 rounded-xl border border-ink-200/70 bg-white/70 px-3 py-2">
@@ -328,25 +333,26 @@ export default async function Landing() {
             <div className="eyebrow">Pricing</div>
             <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">One good decision pays for a year.</h2>
           </div>
-          <Reveal className="mt-12 grid gap-5 md:grid-cols-3">
-            {[
-              { name: "Starter", price: "Free", period: "during beta", d: "For your first deals.", items: ["Full reports with comps and remodel plan", "Saved deals", "Photo assessment"], cta: "Start free", featured: false, href: primaryHref },
-              { name: "Pro", price: "$149", period: "per month", d: "For contractors and investors who run deals every week.", items: ["Unlimited analyses", "PDF reports with your logo", "Editable assumptions per deal", "Priority support"], cta: "Start free", featured: true, href: primaryHref },
-              { name: "Team & API", price: "Talk to us", period: "", d: "For brokerages, lenders and platforms.", items: ["Score every listing over the API", "White-label reports", "Seats and shared deals", "Accuracy report for your metro"], cta: "Contact", featured: false, href: "mailto:hello@example.com" },
-            ].map((t) => (
-              <div key={t.name} className={`flex flex-col rounded-2xl border p-6 ${t.featured ? "border-ink-950 bg-ink-950 text-white shadow-[0_30px_60px_-30px_rgb(11_18_32/0.6)]" : "border-ink-200 bg-canvas"}`}>
-                <div className="flex items-baseline justify-between">
-                  <h3 className="font-semibold">{t.name}</h3>
-                  {t.featured && <span className="rounded-full bg-brand-500 px-2 py-0.5 text-[11px] font-semibold text-white">Most popular</span>}
-                </div>
-                <div className="mt-4 text-3xl font-bold tracking-tight">{t.price} <span className={`text-sm font-normal ${t.featured ? "text-white/60" : "text-ink-500"}`}>{t.period}</span></div>
-                <p className={`mt-2 text-sm ${t.featured ? "text-white/75" : "text-ink-700"}`}>{t.d}</p>
-                <ul className="mt-5 space-y-2 text-sm">
-                  {t.items.map((i) => <li key={i} className="flex gap-2.5"><Check />{i}</li>)}
-                </ul>
-                <Link href={t.href} className={`mt-6 ${t.featured ? "inline-flex items-center justify-center rounded-[0.625rem] bg-white px-4 py-2.5 font-semibold text-ink-950 transition-colors hover:bg-brand-50" : "btn-secondary"}`}>{t.cta}</Link>
+          {/* One card, because one plan exists. Paid plans go here when they can be bought, and not before. */}
+          <Reveal className="mt-12 max-w-xl">
+            <div className="flex flex-col rounded-2xl border border-ink-950 bg-ink-950 p-6 text-white shadow-[0_30px_60px_-30px_rgb(11_18_32/0.6)]">
+              <div className="flex items-baseline justify-between">
+                <h3 className="font-semibold">Beta</h3>
+                <span className="rounded-full bg-brand-500 px-2 py-0.5 text-[11px] font-semibold text-white">The only plan today</span>
               </div>
-            ))}
+              <div className="mt-4 text-3xl font-bold tracking-tight">Free <span className="text-sm font-normal text-white/60">during beta</span></div>
+              <p className="mt-2 text-sm text-white/75">Everything flip does today, while it is being built.</p>
+              <ul className="mt-5 space-y-2 text-sm">
+                {[
+                  "Photo reading of your listing photos, room by room",
+                  "Remodel plan, deal math and stress test, on demo sales data for now",
+                  "Saved deals",
+                  `${monthlyAnalyses} analyses a month per person`,
+                ].map((i) => <li key={i} className="flex gap-2.5"><Check />{i}</li>)}
+              </ul>
+              <Link href={primaryHref} className="mt-6 inline-flex items-center justify-center rounded-[0.625rem] bg-white px-4 py-2.5 font-semibold text-ink-950 transition-colors hover:bg-brand-50">{primaryLabel}</Link>
+            </div>
+            <p className="mt-4 text-sm text-ink-700">No card. Paid plans come later, once real sales data and payments are in place.</p>
           </Reveal>
         </div>
       </section>
