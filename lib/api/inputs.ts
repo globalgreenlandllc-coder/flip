@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { DealInputs, PropertyFacts, Sale } from "@/lib/engine/types";
-import type { ListingInfo } from "@/lib/listing/fetch-listing";
+import { LISTING_VIAS, type ListingInfo, type ListingVia } from "@/lib/listing/fetch-listing";
+import { FACT_SOURCES, MAX_DESCRIPTION_CHARS, MAX_DETAILS, NUMBER_FACTS, TEXT_FACTS, detailLabel, saneFact, type FactSource, type ListingDescription, type ListingDetail, type ListingFacts } from "@/lib/listing/listing-facts";
 import { IMAGE_MEDIA_TYPES, sniffImage, type ImageMediaType } from "@/lib/vision/image-type";
 
 /**
@@ -164,26 +165,86 @@ function webAddress(u: unknown): string | null {
     return null;
   }
 }
-const someText = (v: unknown, max: number): string | undefined => (typeof v === "string" && v.trim() ? v.slice(0, max) : undefined);
+/** Text a caller sent, cut to length, without the characters that are not text: control codes, and the marks that turn the direction of the writing around them. */
+const someText = (v: unknown, max: number): string | undefined => {
+  if (typeof v !== "string") return undefined;
+  const text = v.slice(0, max * 2).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, "").slice(0, max);
+  return text.trim() ? text : undefined;
+};
+
+/** When a caller's browser may say it read the page: within the last week, and not in the future. */
+const READ_AT_PAST_MS = 7 * 24 * 3_600_000;
+const READ_AT_AHEAD_MS = 5 * 60_000;
+/** More entries than a listing has of anything are not looked at, however many were sent. */
+const MAX_LISTING_ENTRIES = 200;
 
 /**
- * A listing the caller's own browser read (the extension, or a pasted page).
- * Its link must be a web address. Everything else was read off a page by a
+ * When the caller says its browser read the page, if that can be so: a full
+ * timestamp, no older than a week and not ahead of the clock. Anything else
+ * ("2099-01-01", "1", "Tue") is answered with the time the request came in,
+ * which is at least true of when flip got the reading.
+ */
+function readAt(value: unknown, now: Date): string {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) {
+    const at = Date.parse(value);
+    if (!Number.isNaN(at) && at >= now.getTime() - READ_AT_PAST_MS && at <= now.getTime() + READ_AT_AHEAD_MS) return new Date(at).toISOString();
+  }
+  return now.toISOString();
+}
+
+/**
+ * A listing the caller's own browser read (the extension, a pasted page, the
+ * button on the listing page). Everything in it was read off a page by a
  * parser, so it is kept when it is sane and left out when it is not: long
  * text is cut, a number out of range or a photo link that is not a link is
- * dropped. The person cannot fix a parser's mistake, and the
- * analysis can go on without that field.
+ * dropped. The person cannot fix a parser's mistake, and the analysis can go
+ * on without that field. Its link, when it has one, must be a web address; a
+ * page pasted without a link has none.
  */
-export function readListing(value: unknown, maxPhotos: number): ListingInfo {
+export function readListing(value: unknown, maxPhotos: number, now: Date = new Date()): ListingInfo {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new InputError("`listing` must be an object.");
   const l = value as Record<string, unknown>;
-  const url = webAddress(l.url);
-  if (!url) throw new InputError("`listing.url` must be the listing's web address.");
-  const host = someText(l.host, 255) ?? new URL(url).hostname.replace(/^www\./, "");
+  const hasLink = typeof l.url === "string" && l.url.trim() !== "";
+  const url = hasLink ? webAddress(l.url) : "";
+  if (url === null) throw new InputError("`listing.url` must be the listing's web address.");
+  const host = someText(l.host, 255) ?? (url ? new URL(url).hostname.replace(/^www\./, "") : "");
   const number = (schema: z.ZodType<number>, v: unknown) => {
     const result = schema.safeParse(v);
     return result.success ? result.data : undefined;
   };
+
+  const facts: ListingFacts = {};
+  if (l.facts && typeof l.facts === "object" && !Array.isArray(l.facts)) {
+    for (const key of [...NUMBER_FACTS, ...TEXT_FACTS]) {
+      const given = l.facts as Record<string, unknown>;
+      const fact = Object.hasOwn(given, key) ? saneFact(key, given[key]) : null;
+      if (fact) facts[key] = fact;
+    }
+  }
+  const details: ListingDetail[] = [];
+  for (const d of Array.isArray(l.details) ? l.details.slice(0, MAX_DETAILS) : []) {
+    // Only the labels flip keeps, written the way flip writes them: this is not a place for a caller's own headings.
+    const label = detailLabel(someText((d as { label?: unknown } | null)?.label, 40) ?? "");
+    const text = someText((d as { value?: unknown } | null)?.value, 160);
+    if (label && text) details.push({ label, value: text });
+  }
+  const d = l.description as { text?: unknown; source?: unknown; cut?: unknown; unsure?: unknown } | null | undefined;
+  const words = d && typeof d === "object" && FACT_SOURCES.includes(d.source as FactSource) ? someText(d.text, MAX_DESCRIPTION_CHARS) : undefined;
+  const description: ListingDescription | undefined = words
+    ? { text: words, source: d!.source as FactSource, ...(d!.cut === true || (typeof d!.text === "string" && d!.text.length > MAX_DESCRIPTION_CHARS) ? { cut: true } : {}), ...(d!.unsure === true ? { unsure: true } : {}) }
+    : undefined;
+  // The caller says how its browser read the page; only the server's own read is "server".
+  const r = l.read as { at?: unknown; via?: unknown; with?: unknown } | null | undefined;
+  const ownWay = (via: unknown): via is ListingVia => LISTING_VIAS.includes(via as ListingVia) && via !== "server";
+  const via = r && typeof r === "object" && ownWay(r.via) ? r.via : undefined;
+  const also = via && Array.isArray(r!.with) ? r!.with.slice(0, 8).filter((way, i, all): way is ListingVia => ownWay(way) && way !== via && all.indexOf(way) === i) : [];
+  // Photo links: the first sane ones, looked for among a listing's worth of entries and no further.
+  const photos: string[] = [];
+  for (const photo of Array.isArray(l.photos) ? l.photos.slice(0, MAX_LISTING_ENTRIES) : []) {
+    const link = webAddress(photo);
+    if (link && photos.length < maxPhotos) photos.push(link);
+  }
+
   return {
     url,
     host,
@@ -195,7 +256,11 @@ export function readListing(value: unknown, maxPhotos: number): ListingInfo {
     beds: number(houseNumbers.beds, l.beds),
     baths: number(houseNumbers.baths, l.baths),
     sqft: number(houseNumbers.sqft, l.sqft),
-    photos: (Array.isArray(l.photos) ? l.photos : []).flatMap((photo) => webAddress(photo) ?? []).slice(0, maxPhotos),
+    photos,
+    description,
+    facts: Object.keys(facts).length ? facts : undefined,
+    details: details.length ? details : undefined,
+    read: via ? { at: readAt(r!.at, now), via, ...(also.length ? { with: also } : {}) } : undefined,
   };
 }
 

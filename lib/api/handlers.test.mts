@@ -2,12 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createAnalyzeHandler, type AnalyzeDeps } from "./analyze.ts";
 import { createEvaluateHandler } from "./evaluate.ts";
-import { InputError, readPhotos } from "./inputs.ts";
+import { InputError, readListing, readPhotos } from "./inputs.ts";
 import { getProviders } from "../data/index.ts";
 import { DEFAULT_LIMITS, MemoryUsageStore, usageSummary, type UsageLimits, type UsageStore } from "../usage/limits.ts";
 import { PhotoReadError, tidyAssessment, type PhotoContext, type PhotoInput, type PhotoReading } from "../vision/analyze-photos.ts";
 import type { PhotoAssessment } from "../vision/schema.ts";
 import type { Report } from "../engine/types.ts";
+import type { ListingInfo } from "../listing/fetch-listing.ts";
 
 /** The fields a reply can carry; each test reads the ones its case returns. */
 interface Reply {
@@ -18,7 +19,9 @@ interface Reply {
   warning: string;
   usage: { used: number; limit: number; resetsOn: string };
   report: Report;
-  listing: { title: string; host: string; price?: number; beds?: number; sqft?: number; photos: string[] };
+  listing: ListingInfo;
+  blocked: boolean;
+  subjectSources: Record<string, string>;
   photosUsed: { uploaded: number; fromListing: number; failed: number; leftOut: number };
 }
 
@@ -36,7 +39,7 @@ const ASSESSMENT: PhotoAssessment = {
 };
 
 /** A handler wired to stand-ins, and a record of what it asked of them. */
-function rig(over: { limits?: Partial<UsageLimits>; userId?: string | null; usage?: UsageStore; readPhotos?: AnalyzeDeps["readPhotos"] } = {}) {
+function rig(over: { limits?: Partial<UsageLimits>; userId?: string | null; usage?: UsageStore; readPhotos?: AnalyzeDeps["readPhotos"]; fetchListing?: AnalyzeDeps["fetchListing"]; fetchPhotos?: AnalyzeDeps["fetchPhotos"] } = {}) {
   const store = new MemoryUsageStore();
   const seen = { ai: [] as PhotoInput[][], told: [] as PhotoContext[], listings: [] as string[], photoFetches: [] as string[][] };
   const clock = { now: new Date("2026-11-10T10:00:00.000Z"), user: over.userId === undefined ? "ann" : over.userId };
@@ -48,12 +51,12 @@ function rig(over: { limits?: Partial<UsageLimits>; userId?: string | null; usag
     providers: getProviders,
     fetchListing: async (url) => {
       seen.listings.push(url);
-      return { url, host: new URL(url).hostname, fetched: false, note: "blocked", photos: [] };
+      return over.fetchListing ? over.fetchListing(url) : { url, host: new URL(url).hostname, fetched: false, note: "blocked", photos: [] };
     },
     resolveByAddress: async () => null,
     fetchPhotos: async (urls) => {
       seen.photoFetches.push(urls);
-      return { photos: [], failed: urls };
+      return over.fetchPhotos ? over.fetchPhotos(urls) : { photos: [], failed: urls };
     },
     readPhotos:
       over.readPhotos ??
@@ -168,7 +171,7 @@ test("analyze: what a parser read off a page is kept when sane and left out when
   const listing = { url: "https://www.zillow.com/homedetails/1-Main-St-Graham-WA-98338/1_zpid/", fetched: true, title: "x".repeat(5_000), address: "1 Main St, Graham, WA 98338", price: -1, beds: 3, sqft: 12, photos: ["javascript:alert(1)", 42] };
   const res = await r.analyze({ listing, photos: HOUSE.photos, deal: { askingPrice: 640_000 } });
   assert.equal(res.status, 200);
-  assert.equal(res.body.listing.title.length, 500);
+  assert.equal(res.body.listing.title?.length, 500);
   assert.equal(res.body.listing.price, undefined);
   assert.equal(res.body.listing.beds, 3);
   assert.equal(res.body.listing.sqft, undefined);
@@ -289,12 +292,236 @@ test("analyze: a database that fails between writing the run down and counting i
 
 test("analyze: while the property record is made up, the AI is told only what the listing gave", async () => {
   const r = rig();
+  const told = (i: number) => Object.fromEntries(Object.entries(r.seen.told[i]).filter(([, v]) => v !== undefined));
   await r.analyze(HOUSE);
   // Nothing from the made-up record: no year, no neighbourhood, no size.
-  assert.deepEqual(r.seen.told[0], { address: undefined, sqft: undefined, beds: undefined, baths: undefined, yearBuilt: undefined });
-  const listing = { url: "https://www.zillow.com/homedetails/1-Main-St-Graham-WA-98338/1_zpid/", fetched: true, address: "1 Main St, Graham, WA 98338", sqft: 2_150, beds: 4, photos: [] };
+  assert.deepEqual(told(0), {});
+  const listing = { url: "https://www.zillow.com/homedetails/1-Main-St-Graham-WA-98338/1_zpid/", fetched: true, address: "1 Main St, Graham, WA 98338", sqft: 2_150, beds: 4, photos: [], facts: { yearBuilt: { value: 1987, source: "data" } } };
   await r.analyze({ ...HOUSE, listing, subject: { baths: 2.5 } });
-  assert.deepEqual(r.seen.told[1], { address: "1 Main St, Graham, WA 98338", sqft: 2_150, beds: 4, baths: 2.5, yearBuilt: undefined });
+  assert.deepEqual(told(1), { address: "1 Main St, Graham, WA 98338", sqft: 2_150, beds: 4, baths: 2.5, yearBuilt: 1987 });
+});
+
+/** A listing as a browser reads it off a page: description, facts with their sources, detail lines. Written by hand. */
+const READ_LISTING = {
+  url: "https://www.zillow.com/homedetails/13013-224th-St-E-Graham-WA-98338/1_zpid/",
+  fetched: true,
+  address: "13013 224th St E, Graham, WA 98338",
+  price: 549_000,
+  beds: 4,
+  baths: 3,
+  sqft: 2_340,
+  photos: [] as string[],
+  description: { text: "Sold as-is. Cash or rehab loan only: the septic system failed inspection in 2025.", source: "data" },
+  facts: {
+    yearBuilt: { value: 1955, source: "data" },
+    lotSqft: { value: 44_431, source: "data" },
+    garage: { value: 2, source: "text", seen: "Garage spaces: 2" },
+    hoaMonthly: { value: 35, source: "text", seen: "HOA dues: $35/mo" },
+    mlsId: { value: "2301234", source: "meta" },
+  },
+  details: [{ label: "Sewer", value: "Septic Tank" }, { label: "Listing terms", value: "Cash, Rehab Loan" }],
+  // Five minutes before the clock of these tests.
+  read: { at: "2026-11-10T09:55:00.000Z", via: "paste" },
+};
+
+test("analyze: what the listing said is kept and comes back with the result", async () => {
+  const r = rig();
+  const res = await r.analyze({ photos: HOUSE.photos, listing: READ_LISTING });
+  assert.equal(res.status, 200);
+  // The asking price came from the listing; nobody typed it.
+  assert.equal(res.body.report.deal.purchasePrice, 549_000);
+  assert.deepEqual(res.body.listing.description, READ_LISTING.description);
+  assert.deepEqual(res.body.listing.details, READ_LISTING.details);
+  assert.deepEqual(res.body.listing.facts, READ_LISTING.facts);
+  assert.deepEqual(res.body.listing.read, READ_LISTING.read);
+  assert.equal(r.store.runs[0].source, "zillow.com");
+  // With photos beside it, the server did not read the link itself.
+  assert.equal(r.seen.listings.length, 0);
+});
+
+test("analyze: the house's facts come from the listing where it gives them, and the result says which came from where", async () => {
+  const r = rig();
+  const base = await getProviders().parcels.lookup("demo");
+  const res = await r.analyze({ photos: HOUSE.photos, listing: READ_LISTING });
+  const { subject } = res.body.report;
+  // Size, rooms and year from the listing. Its lot and garage are kept and shown, and are not yet the valuation's to use.
+  assert.deepEqual([subject.sqft, subject.beds, subject.baths, subject.yearBuilt, subject.lotSqft, subject.garage], [2_340, 4, 3, 1955, base!.lotSqft, base!.garage]);
+  assert.deepEqual(res.body.subjectSources, { sqft: "listing", lotSqft: "record", beds: "listing", baths: "listing", yearBuilt: "listing", garage: "record" });
+  assert.deepEqual([res.body.listing.facts?.lotSqft?.value, res.body.listing.facts?.garage?.value], [44_431, 2]);
+  // Where the house is still comes from the (made-up) record.
+  assert.deepEqual([subject.lat, subject.submarket], [base!.lat, base!.submarket]);
+
+  // The age flags follow the year built: read off the listing here, so they are not demo flags.
+  const basis = (code: string) => res.body.report.riskFlags.filter((f) => f.code === code).map((f) => f.basis);
+  assert.deepEqual(basis("PRE_1978"), ["listing"]);
+  assert.deepEqual(basis("OLD_SYSTEMS"), ["listing"]);
+  assert.deepEqual(basis("PHOTO_RED_FLAG"), ["photos"]);
+  assert.deepEqual(basis("VERIFY_ON_SITE"), ["photos"]);
+  assert.ok(res.body.report.riskFlags.filter((f) => !["PRE_1978", "OLD_SYSTEMS", "PHOTO_RED_FLAG", "VERIFY_ON_SITE"].includes(f.code)).every((f) => f.basis === "sales"));
+
+  // With nothing from a listing, everything is the record's, the age flags included.
+  const bare = await r.analyze(HOUSE);
+  assert.deepEqual(bare.body.subjectSources, { sqft: "record", lotSqft: "record", beds: "record", baths: "record", yearBuilt: "record", garage: "record" });
+  assert.deepEqual(bare.body.report.riskFlags.filter((f) => f.code === "PRE_1978").map((f) => f.basis), ["record"]);
+  // What the caller sends wins over the listing, and is said to be the caller's.
+  const corrected = await r.analyze({ photos: HOUSE.photos, listing: READ_LISTING, subject: { yearBuilt: 1999 } });
+  assert.equal(corrected.body.report.subject.yearBuilt, 1999);
+  assert.equal(corrected.body.subjectSources.yearBuilt, "caller");
+  assert.equal(corrected.body.report.riskFlags.some((f) => f.code === "PRE_1978"), false);
+  // ...its age flags included: a year the caller sent is not "from the listing".
+  const old = await r.analyze({ ...HOUSE, subject: { yearBuilt: 1950 } });
+  assert.deepEqual(old.body.report.riskFlags.filter((f) => f.code === "PRE_1978" || f.code === "OLD_SYSTEMS").map((f) => f.basis), ["caller", "caller"]);
+});
+
+test("analyze: a year found in a sentence is kept with the listing and is not the house's", async () => {
+  const r = rig();
+  const loose = { ...READ_LISTING, facts: { yearBuilt: { value: 2019, source: "text", seen: "Detached shop built in 2019", loose: true } } };
+  const res = await r.analyze({ photos: HOUSE.photos, listing: loose });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.listing.facts?.yearBuilt, loose.facts.yearBuilt);
+  assert.equal(res.body.subjectSources.yearBuilt, "record");
+  assert.notEqual(res.body.report.subject.yearBuilt, 2019);
+  // And the AI is not told a year nobody stated.
+  assert.equal(r.seen.told[0].yearBuilt, undefined);
+});
+
+test("analyze: one house per request: a reading of one page is not taken with the link of another", async () => {
+  const r = rig();
+  const other = await r.analyze({ listingUrl: "https://b.example/other-house", listing: READ_LISTING });
+  assert.equal(other.status, 400);
+  assert.match(other.body.error, /two different pages/);
+  // Refused before a run is started or anything is read.
+  assert.equal(r.store.runs.length, 0);
+  assert.equal(r.seen.listings.length, 0);
+  // The same page with something added to its link on the way is the same page.
+  const shared = await r.analyze({ ...HOUSE, listingUrl: `${READ_LISTING.url}?utm_source=share`, listing: READ_LISTING });
+  assert.equal(shared.status, 200);
+});
+
+test("analyze: a page the browser read and a link that turns out to be another house are not made into one listing", async () => {
+  const photo: PhotoInput = { base64: JPEG, mediaType: "image/jpeg" };
+  // A link that does not say its address; the server reads it and finds 9 Other Rd. The page that was pasted is 13013 224th St E.
+  const r = rig({
+    fetchListing: async (url) => ({ url, host: "windfall.example", fetched: true, address: "9 Other Rd, Tacoma, WA 98402", price: 310_000, photos: ["https://photos.example.com/other/1.jpg"], read: { at: "2026-11-10T09:59:00.000Z", via: "server" } }),
+    fetchPhotos: async (urls) => ({ photos: urls.map(() => photo), failed: [] }),
+  });
+  const link = "https://www.windfall.example/listing/2301234";
+  const res = await r.analyze({ listingUrl: link, listing: { ...READ_LISTING, url: link } });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /page that was read is for 13013 224th St E, Graham, WA 98338, and the link is for 9 Other Rd, Tacoma, WA 98402/);
+  // The other house's photos were not fetched, the AI was not asked, and it cost nothing.
+  assert.deepEqual([r.seen.photoFetches.length, r.seen.ai.length, r.store.runs[0].outcome.status], [0, 0, "free"]);
+  // The same house read both ways is one listing.
+  const same = rig({
+    fetchListing: async (url) => ({ url, host: "windfall.example", fetched: true, address: "13013 224th St E Graham, WA 98338", photos: ["https://photos.example.com/p/1.jpg"], read: { at: "2026-11-10T09:59:00.000Z", via: "server" } }),
+    fetchPhotos: async (urls) => ({ photos: urls.map(() => photo), failed: [] }),
+  });
+  assert.equal((await same.analyze({ listingUrl: link, listing: { ...READ_LISTING, url: link } })).status, 200);
+});
+
+test("analyze: a house nothing can be compared to ends before the AI is asked, and costs nothing", async () => {
+  const r = rig();
+  // Forty acres: every sold home nearby is too different to be a comp.
+  const res = await r.analyze({ ...HOUSE, subject: { lotSqft: 1_742_400 } });
+  assert.equal(res.status, 422);
+  assert.match(res.body.error, /No usable comps/);
+  assert.equal(r.seen.ai.length, 0);
+  assert.equal(r.store.runs[0].outcome.status, "free");
+  assert.equal((await usageSummary(r.store, DEFAULT_LIMITS, "ann", r.clock.now)).used, 0);
+});
+
+test("analyze: when the site turns the server away, that is said even if the person's browser had read the page", async () => {
+  const r = rig();
+  // A page pasted as text only (no photos came through), and a link the server is blocked on.
+  const res = await r.analyze({ listingUrl: READ_LISTING.url, listing: READ_LISTING });
+  assert.equal(res.status, 400);
+  assert.equal(res.body.blocked, true);
+  assert.match(res.body.error, /zillow\.com would not let us read the page for 13013 224th St E/);
+  // What the browser read is not lost with it.
+  assert.equal(res.body.listing.description?.text, READ_LISTING.description.text);
+  // With no link at all there was nobody to be turned away.
+  const none = await r.analyze({ listing: READ_LISTING });
+  assert.equal(none.status, 400);
+  assert.equal(none.body.blocked, false);
+  assert.match(none.body.error, /No photos/);
+});
+
+test("analyze: a listing's reading is kept when sane and left out when not, field by field", async () => {
+  const r = rig();
+  const listing = {
+    ...READ_LISTING,
+    description: { text: "d".repeat(9_000), source: "data" },
+    facts: {
+      yearBuilt: { value: 3000, source: "data" },
+      lotSqft: { value: "big", source: "data" },
+      garage: { value: 2, source: "a hunch" },
+      hoaMonthly: { value: 35, source: "text", seen: "s".repeat(500) },
+      favoriteColor: { value: "blue", source: "text" },
+      status: { value: "x".repeat(500), source: "text" },
+    },
+    details: [{ label: "Sewer", value: "v".repeat(500) }, { label: 7, value: "x" }, "nonsense", { label: "Roof" }],
+    read: { at: "not a date", via: "server" },
+  };
+  const res = await r.analyze({ photos: HOUSE.photos, listing });
+  assert.equal(res.status, 200);
+  const kept = res.body.listing;
+  assert.equal(kept.description?.text.length, 6_000);
+  assert.deepEqual(Object.keys(kept.facts ?? {}).sort(), ["hoaMonthly", "status"]);
+  assert.equal(kept.facts?.hoaMonthly?.seen?.length, 120);
+  assert.equal(String(kept.facts?.status?.value).length, 160);
+  assert.deepEqual(kept.details, [{ label: "Sewer", value: "v".repeat(160) }]);
+  // Only the server's own read is "server"; a caller cannot claim it.
+  assert.equal(kept.read, undefined);
+  // When the browser read the page is believed only if it can be so: a full timestamp from the last week, not ahead of the clock.
+  const now = r.clock.now;
+  const at = (claimed: unknown) => readListing({ url: "", photos: [], read: { at: claimed, via: "paste" } }, 16, now).read?.at;
+  assert.equal(at("2026-11-10T09:00:00.000Z"), "2026-11-10T09:00:00.000Z");
+  assert.equal(at("2026-11-10T23:00:00+14:00"), "2026-11-10T09:00:00.000Z");
+  for (const claimed of ["2099-01-01T00:00:00.000Z", "2026-11-10T10:30:00.000Z", "2020-01-01T00:00:00.000Z", "2026-11-09", "1", "0", "Tue", "Jan 1 2026 garbage", "+275760-09-13T00:00:00.000Z", 5, null]) assert.equal(at(claimed), now.toISOString(), String(claimed));
+  // The other ways it was read are kept when they are ways a browser reads; "server" cannot be claimed there either.
+  assert.deepEqual(readListing({ url: "", photos: [], read: { at: "x", via: "paste", with: ["browser", "server", "paste", "browser", "nonsense"] } }, 16, now).read, { at: now.toISOString(), via: "paste", with: ["browser"] });
+  // A description is told to be cut when it was; the two flags a reader sets are kept, and nothing else rides along.
+  assert.deepEqual(readListing({ url: "", photos: [], description: { text: "d".repeat(9_000), source: "data", unsure: true, extra: "x" } }, 16, now).description, { text: "d".repeat(6_000), source: "data", cut: true, unsure: true });
+  assert.deepEqual(readListing({ url: "", photos: [], facts: { yearBuilt: { value: 1987, source: "text", loose: true, extra: 1 } } }, 16, now).facts, { yearBuilt: { value: 1987, source: "text", loose: true } });
+  // The year was nonsense, so the record's stands, and is said to be the record's.
+  assert.equal(res.body.subjectSources.yearBuilt, "record");
+  // A description with no known source is not kept either.
+  const unsourced = await r.analyze({ photos: HOUSE.photos, listing: { ...READ_LISTING, description: { text: "As-is.", source: "somewhere" } } });
+  assert.equal(unsourced.body.listing.description, undefined);
+});
+
+test("analyze: a page pasted without a link is a listing too", async () => {
+  const r = rig();
+  const res = await r.analyze({ photos: HOUSE.photos, listing: { ...READ_LISTING, url: "" } });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.listing.url, "");
+  assert.equal(res.body.listing.host, "");
+  assert.equal(res.body.listing.description?.text, READ_LISTING.description.text);
+  assert.equal(r.store.runs[0].source, null);
+});
+
+test("analyze: a browser's reading that came without photos has the server read the link for them, and keeps the browser's facts", async () => {
+  const photo: PhotoInput = { base64: JPEG, mediaType: "image/jpeg" };
+  const r = rig({
+    fetchListing: async (url) => ({ url, host: "zillow.com", fetched: true, price: 555_000, beds: 9, photos: ["https://photos.example.com/p/1.jpg"], facts: { taxAnnual: { value: 5_432, source: "meta" } }, read: { at: "2026-11-24T20:01:00.000Z", via: "server" } }),
+    fetchPhotos: async (urls) => ({ photos: urls.map(() => photo), failed: [] }),
+  });
+  const res = await r.analyze({ listingUrl: READ_LISTING.url, listing: READ_LISTING });
+  assert.equal(res.status, 200);
+  assert.deepEqual(r.seen.listings, [READ_LISTING.url]);
+  assert.deepEqual(r.seen.photoFetches, [["https://photos.example.com/p/1.jpg"]]);
+  const kept = res.body.listing;
+  assert.equal(kept.description?.text, READ_LISTING.description.text);
+  // The page the person's browser read said 4 bedrooms and $549,000; the server's read said otherwise and loses.
+  assert.deepEqual([kept.beds, kept.price], [4, 549_000]);
+  assert.equal(kept.facts?.taxAnnual?.value, 5_432);
+  // Both ways it was read are said: the page the person pasted, and the server for what that lacked.
+  assert.deepEqual(kept.read, { ...READ_LISTING.read, with: ["server"] });
+  assert.deepEqual(kept.photos, ["https://photos.example.com/p/1.jpg"]);
+  // The line a person reads and the fact beside it are one reading: never the browser's number in one and the server's in the other.
+  const factsOnly = await r.analyze({ listingUrl: READ_LISTING.url, listing: { url: READ_LISTING.url, fetched: true, photos: [], facts: { beds: { value: 4, source: "data" }, price: { value: 549_000, source: "data" } } } });
+  assert.deepEqual([factsOnly.body.listing.beds, factsOnly.body.listing.facts?.beds?.value, factsOnly.body.listing.price], [4, 4, 549_000]);
+  assert.equal(factsOnly.body.report.subject.beds, 4);
 });
 
 test("analyze: a photo link that is not a link is left out, not thrown back; one with a space in it is still a link", async () => {
@@ -311,6 +538,23 @@ test("analyze: a photo link that is not a link is left out, not thrown back; one
   const none = await r.analyze({ deal: HOUSE.deal, photos: [{ url: "javascript:alert(1)" }] });
   assert.equal(none.status, 400);
   assert.match(none.body.error, /No photos/);
+});
+
+test("a listing's lists are cut to a listing's size before anything looks at their entries", () => {
+  // Building two lists of a million entries takes longer than reading them should: only the reading is timed.
+  const sent = { url: "", photos: Array.from({ length: 1_000_000 }, (_, i) => `https://a.example/p ${i}.jpg`), details: Array.from({ length: 1_000_000 }, (_, i) => ({ label: "Sewer", value: `b${i}` })) };
+  const started = process.hrtime.bigint();
+  const big = readListing(sent, 16);
+  assert.ok(Number(process.hrtime.bigint() - started) / 1e6 < 250);
+  assert.equal(big.photos.length, 16);
+  assert.equal(big.details?.length, 40);
+  // Names every object has are not facts, whatever is sent under them.
+  const odd = readListing(JSON.parse('{"url":"","photos":[],"facts":{"__proto__":{"value":1987,"source":"data"},"constructor":{"value":1,"source":"data"},"toString":{"value":2,"source":"data"}}}'), 16);
+  assert.equal(odd.facts, undefined);
+  assert.equal(({} as Record<string, unknown>).value, undefined);
+  // Detail lines keep flip's own labels, written flip's way; a caller's own headings, and characters that are not text, are not kept.
+  const lines = readListing({ url: "", photos: [], details: [{ label: "sewer:", value: "Septic\u0000 Tank\u202e" }, { label: "__proto__", value: "x" }, { label: "<b>My heading</b>", value: "y" }] }, 16);
+  assert.deepEqual(lines.details, [{ label: "Sewer", value: "Septic Tank" }]);
 });
 
 test("analyze: photos are added until the AI's request would be too large; the rest are left out and counted", async () => {

@@ -166,6 +166,13 @@ export interface RehabRange {
 export interface RiskFlag {
   code: string;
   message: string;
+  /**
+   * What the flag was worked out from, when the caller knows: the photos, the
+   * listing, a number sent with the request, the provider's property record,
+   * or the sales. The engine does not set it; the route that knows where
+   * each input came from does.
+   */
+  basis?: "photos" | "listing" | "caller" | "record" | "sales";
 }
 
 export interface Report {

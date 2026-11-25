@@ -83,7 +83,7 @@ export function Evaluator({ initial, initialProvider }: { initial: Report | null
             <p className="flex-1 basis-80 text-lg leading-snug">{report.deal.decidingFactor}</p>
             <SaveDealButton payload={{ report, provider }} />
           </div>
-          <ReportView report={report} hideVerdict demo={demo} />
+          <ReportView report={report} hideVerdict demo={demo} conditionFrom="record" />
         </section>
       )}
     </div>

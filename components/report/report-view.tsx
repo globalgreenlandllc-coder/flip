@@ -1,9 +1,24 @@
-import type { Report } from "@/lib/engine/types";
+import type { PropertyFacts, Report, RiskFlag } from "@/lib/engine/types";
+import type { SubjectKey, SubjectSources } from "@/lib/listing/subject";
 import { VerdictBadge } from "@/components/ui/verdict";
 import { DemoTag } from "@/components/ui/demo";
 
-/** Risk flags that come from the photos. Every other flag is worked out from the property record and the sales. */
+/** Risk flags that come from the photos. */
 const FROM_PHOTOS = new Set(["PHOTO_RED_FLAG", "VERIFY_ON_SITE"]);
+/** Risk flags that follow the year the house was built, wherever that year came from. */
+const FROM_AGE = new Set(["PRE_1978", "OLD_SYSTEMS"]);
+
+/**
+ * Is this flag as made up as the demo's property record and sales are? Told
+ * by what kind of flag it is first: one worked out from the sales is made up
+ * whatever a saved result says its basis was. Only an age flag can be real
+ * without the photos, when the year came from the listing or the request.
+ */
+function madeUp(flag: RiskFlag): boolean {
+  if (FROM_PHOTOS.has(flag.code)) return false;
+  if (FROM_AGE.has(flag.code)) return flag.basis !== "listing" && flag.basis !== "caller";
+  return true;
+}
 
 export const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 export const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
@@ -46,10 +61,72 @@ function Row({ k, v, bold }: { k: string; v: string; bold?: boolean }) {
 }
 
 /**
+ * The house the numbers are about, said by where each part came from: the
+ * listing, the photos, or the provider's property record. While that record
+ * is made up, its part carries the DEMO tag and the rest does not.
+ */
+function SubjectLine({ subject, sources, conditionFrom, demo }: { subject: PropertyFacts; sources?: SubjectSources; conditionFrom?: "photos" | "record"; demo: boolean }) {
+  const words: Record<SubjectKey, string> = {
+    sqft: `${subject.sqft.toLocaleString()} sqft`,
+    beds: `${subject.beds} bd`,
+    baths: `${subject.baths} ba`,
+    yearBuilt: `built ${subject.yearBuilt}`,
+    lotSqft: `lot ${subject.lotSqft.toLocaleString()} sqft`,
+    garage: `garage ${subject.garage}`,
+  };
+  if (!sources) {
+    // A result from before sources were kept, or one with no listing behind it: every fact is the record's.
+    return (
+      <p className="text-sm text-ink-500" data-subject>
+        Subject: {words.sqft} · {subject.beds} bd / {subject.baths} ba · {words.yearBuilt} · {subject.condition} · {subject.submarket}
+        {demo && (
+          <>
+            <DemoTag className="ml-2" />{" "}
+            <span className="text-xs">
+              {conditionFrom === "photos" ? "the year built, the area and anything the listing did not give are from a made-up property record; the condition is read off the photos" : "a made-up property record"}
+            </span>
+          </>
+        )}
+      </p>
+    );
+  }
+  // In the order a listing says them: size, rooms, age, land, parking.
+  const order: SubjectKey[] = ["sqft", "beds", "baths", "yearBuilt", "lotSqft", "garage"];
+  const from = (wanted: SubjectSources[SubjectKey]) => order.filter((k) => sources[k] === wanted).map((k) => words[k]);
+  const given = from("listing");
+  const sent = from("caller");
+  const recorded = [...from("record"), ...(conditionFrom === "photos" ? [] : [`${subject.condition} condition`]), `area ${subject.submarket}`];
+  return (
+    <div className="space-y-1 text-sm text-ink-500" data-subject>
+      {given.length > 0 && (
+        <p data-subject-given>
+          <span className="font-medium text-ink-700">From the listing:</span> {given.join(" · ")}
+        </p>
+      )}
+      {sent.length > 0 && (
+        <p data-subject-sent>
+          <span className="font-medium text-ink-700">Sent with the request:</span> {sent.join(" · ")}
+        </p>
+      )}
+      {conditionFrom === "photos" && (
+        <p>
+          <span className="font-medium text-ink-700">From the photos:</span> {subject.condition} condition
+        </p>
+      )}
+      <p data-subject-record>
+        <span className="font-medium text-ink-700">{demo ? "From a made-up property record" : "From the property record"}:</span> {recorded.join(" · ")}
+        {demo && <DemoTag className="ml-2" />}
+      </p>
+    </div>
+  );
+}
+
+/**
  * The full report body. The verdict row can be hidden when the caller renders
  * its own header. `demo` marks every number that comes from made-up sales.
+ * `sources` says where each fact about the house came from, when that was kept.
  */
-export function ReportView({ report, hideVerdict = false, demo = false }: { report: Report; hideVerdict?: boolean; demo?: boolean }) {
+export function ReportView({ report, hideVerdict = false, demo = false, sources, conditionFrom }: { report: Report; hideVerdict?: boolean; demo?: boolean; sources?: SubjectSources; conditionFrom?: "photos" | "record" }) {
   const { subject, arv, deal, riskFlags } = report;
   return (
     <section className="space-y-8">
@@ -60,14 +137,7 @@ export function ReportView({ report, hideVerdict = false, demo = false }: { repo
         </div>
       )}
 
-      <p className="text-sm text-ink-500">
-        Subject: {subject.sqft.toLocaleString()} sqft · {subject.beds} bd / {subject.baths} ba · built {subject.yearBuilt} · {subject.condition} · {subject.submarket}
-        {demo && (
-          <>
-            <DemoTag className="ml-2" /> <span className="text-xs">the year built, the area and anything the listing did not give are from a made-up property record</span>
-          </>
-        )}
-      </p>
+      <SubjectLine subject={subject} sources={sources} conditionFrom={conditionFrom} demo={demo} />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat demo={demo} label="ARV" value={money(arv.point)} sub={`${money(arv.low)} – ${money(arv.high)} · ${arv.confidence}${arv.cappedByCeiling ? " · capped" : ""}`} />
@@ -167,8 +237,8 @@ export function ReportView({ report, hideVerdict = false, demo = false }: { repo
                 <span className="mt-0.5 h-fit shrink-0 rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[11px] text-ink-700">{f.code}</span>
                 <span>
                   {f.message}
-                  {/* A flag worked out from the made-up record or sales is as made up as they are; one read off the photos is real. */}
-                  {demo && !FROM_PHOTOS.has(f.code) && <DemoTag className="ml-2" />}
+                  {/* A flag worked out from the made-up record or sales is as made up as they are; one read off the photos or the listing is real. */}
+                  {demo && madeUp(f) && <DemoTag className="ml-2" />}
                 </span>
               </li>
             ))}

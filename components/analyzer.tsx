@@ -8,6 +8,8 @@ import { parseFetchedListing, parsePastedListing, type ListingInfo } from "@/lib
 import { detectExtension, fetchViaExtension } from "@/lib/listing/extension";
 import Link from "next/link";
 import type { Prefill } from "@/lib/listing/prefill";
+import { analysisStarted, browserRead, formFromPrefill, houseLearned, linkGiven, linkPasted, listingToSend, pagePasted, photoLinksAdded, type HouseForm } from "@/lib/listing/form";
+import { webLink } from "@/lib/listing/house";
 import { ReportView } from "@/components/report/report-view";
 import { PlanView } from "@/components/report/plan-view";
 import { AssessmentView, ListingCard } from "@/components/report/assessment-view";
@@ -15,11 +17,14 @@ import { VerdictBadge } from "@/components/ui/verdict";
 import { DemoBanner } from "@/components/ui/demo";
 import { SaveDealButton } from "@/components/app/save-deal-button";
 import type { UsageSummary } from "@/lib/usage/limits";
+import type { SubjectSources } from "@/lib/listing/subject";
 
 interface AnalyzeResponse {
   /** Where the market data came from; `demo` is true while it is made up. */
   provider?: string;
   demo?: boolean;
+  /** Where each fact about the house came from: the listing, or the provider's record. */
+  subjectSources?: SubjectSources;
   warning?: string;
   /** This person's month after the run. */
   usage?: UsageSummary;
@@ -48,18 +53,14 @@ async function toJpeg(file: File, maxEdge = 1280): Promise<{ base64: string; med
   return { base64: dataUrl.slice(dataUrl.indexOf(",") + 1), mediaType: "image/jpeg" };
 }
 
-type PastedSummary = { address?: string; beds?: number; baths?: number; sqft?: number; photos: number; source: "paste" | "bookmark" | "extension" };
-
 export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; initialUsage?: UsageSummary | null }) {
   const [usage, setUsage] = useState<UsageSummary | null>(initialUsage ?? null);
-  const [listingUrl, setListingUrl] = useState(prefill?.listingUrl ?? "");
-  const [photoUrls, setPhotoUrls] = useState(prefill?.photos.join("\n") ?? "");
+  // The link, the photo links, the price and the listing as this browser read it (a pasted
+  // page, the button on the listing page, the extension), held as one value because they are
+  // about one house: lib/listing/form.ts keeps them that way when the person moves to another.
+  const [house, setHouse] = useState<HouseForm>(() => formFromPrefill(prefill));
   const [showLinks, setShowLinks] = useState(Boolean(prefill?.photos.length));
   const [files, setFiles] = useState<{ file: File; url: string }[]>([]);
-  const [askingPrice, setAskingPrice] = useState(prefill?.price ? String(prefill.price) : "");
-  const [pasted, setPasted] = useState<PastedSummary | null>(
-    prefill ? { address: prefill.address, beds: prefill.beds, baths: prefill.baths, sqft: prefill.sqft, photos: prefill.photos.length, source: "bookmark" } : null,
-  );
   const [dragging, setDragging] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,22 +84,20 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
 
   /** Dropped or pasted image links (e.g. dragged from a listing gallery) go into the photo-links box. */
   const addUrls = useCallback((text: string) => {
-    const urls = text.split(/\s+/).filter((u) => /^https?:\/\/\S+/.test(u));
-    if (!urls.length) return false;
-    setPhotoUrls((prev) => [...new Set([...prev.split(/\s+/).filter(Boolean), ...urls])].join("\n"));
+    if (!text.split(/\s+/).some((u) => /^https?:\/\/\S+$/.test(u))) return false;
+    setHouse((now) => photoLinksAdded(now, text) ?? now);
     setShowLinks(true);
     return true;
   }, []);
 
-  /** A whole listing page pasted from the browser: photos, price and facts. */
+  /** A whole listing page pasted from the browser: photos, price, facts, description. */
   const addPastedPage = useCallback((html: string, text: string) => {
-    const info = parsePastedListing(html, text, listingUrl || undefined);
-    if (!info.photos.length && !info.price && !info.address && !info.beds) return false;
-    if (info.photos.length) addUrls(info.photos.join("\n"));
-    if (info.price) setAskingPrice((prev) => prev || String(info.price));
-    setPasted({ address: info.address, beds: info.beds, baths: info.baths, sqft: info.sqft, photos: info.photos.length, source: "paste" });
+    const next = pagePasted(house, parsePastedListing(html, text, webLink(house.link) || undefined), new Date(), files.length);
+    if (!next) return false;
+    setHouse(next);
+    if (next.photoLinks) setShowLinks(true);
     return true;
-  }, [listingUrl, addUrls]);
+  }, [house, files.length]);
 
   const removeFile = useCallback((index: number) => {
     setFiles((prev) => {
@@ -109,35 +108,35 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
 
   async function run(e: React.FormEvent) {
     e.preventDefault();
-    await analyze(listingUrl);
+    // Is what the form holds about this link's house? A reading of another listing is set aside
+    // here, with the photo links it filled in and the price, before anything is sent.
+    await analyze(linkGiven(house, house.link, files.length));
   }
 
-  /** The analysis itself; `url` is passed explicitly so a pasted link can start it before state settles. */
-  async function analyze(url: string) {
-    const listingUrl = url.trim();
+  /** The analysis itself, for a form already settled on its link (linkGiven); passed in so a pasted link can start it before state settles. */
+  async function analyze(settled: HouseForm) {
     setError(null);
     setBlocked(null);
     setResult(null);
+    let form = analysisStarted(settled);
+    setHouse(form);
+    const listingUrl = form.link;
     try {
-      const photos: Photo[] = photoUrls
+      const photos: Photo[] = form.photoLinks
         .split(/\s+/)
         .filter((u) => /^https?:\/\//.test(u))
         .map((url) => ({ url }));
       // Link only, extension installed: read the page through the browser.
-      let listing: ListingInfo | undefined;
-      let priceFromPage: number | undefined;
-      let facts: { sqft?: number; beds?: number; baths?: number } = {};
-      if (listingUrl && photos.length === 0 && files.length === 0 && extension) {
+      if (webLink(listingUrl) && photos.length === 0 && files.length === 0 && extension) {
         setStatus("Reading the listing through your browser…");
         const r = await fetchViaExtension(listingUrl);
-        if (r?.ok && r.html) {
-          listing = parseFetchedListing(listingUrl, r.html);
-          for (const url of listing.photos) photos.push({ url });
-          priceFromPage = listing.price;
-          facts = { sqft: listing.sqft, beds: listing.beds, baths: listing.baths };
-          if (listing.photos.length) { setPhotoUrls(listing.photos.join("\n")); setShowLinks(true); }
-          if (!askingPrice && listing.price) setAskingPrice(String(listing.price));
-          setPasted({ address: listing.address, beds: listing.beds, baths: listing.baths, sqft: listing.sqft, photos: listing.photos.length, source: "extension" });
+        const fetched = r?.ok && r.html ? { ...parseFetchedListing(listingUrl, r.html), read: { at: new Date().toISOString(), via: "browser" as const } } : null;
+        // A check page shown to the browser is not the listing. The server tries next, and says so if it is turned away too.
+        if (fetched?.fetched) {
+          form = browserRead(form, fetched);
+          setHouse((now) => (now.link.trim() === listingUrl ? browserRead(now, fetched) : now));
+          for (const url of fetched.photos) photos.push({ url });
+          if (fetched.photos.length) setShowLinks(true);
         }
       }
       if (files.length) {
@@ -146,6 +145,8 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
       }
       if (!listingUrl && photos.length === 0) throw new Error("Paste a listing link, add photos, or paste photo links.");
       setStatus(photos.length ? `Looking at ${photos.length} photo${photos.length === 1 ? "" : "s"} and running the numbers…` : "Reading the listing…");
+      const listing = listingToSend(form);
+      const askingPrice = form.price ? Number(form.price.replace(/[^0-9.]/g, "")) : listing?.price;
       const res = await fetch("/api/v1/analyze", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -153,15 +154,11 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
           listingUrl: listingUrl || undefined,
           listing,
           photos: photos.length ? photos.slice(0, MAX_PHOTOS) : undefined,
-          subject: (() => {
-            const f = { sqft: facts.sqft ?? pasted?.sqft, beds: facts.beds ?? pasted?.beds, baths: facts.baths ?? pasted?.baths };
-            return f.sqft || f.beds || f.baths ? { ...(f.sqft ? { sqft: f.sqft } : {}), ...(f.beds ? { beds: f.beds } : {}), ...(f.baths ? { baths: f.baths } : {}) } : undefined;
-          })(),
-          deal: askingPrice ? { askingPrice: Number(askingPrice.replace(/[^0-9.]/g, "")) } : priceFromPage ? { askingPrice: priceFromPage } : undefined,
+          deal: askingPrice ? { askingPrice } : undefined,
         }),
       });
       const text = await res.text();
-      let json: (AnalyzeResponse & { error?: string }) | null = null;
+      let json: (AnalyzeResponse & { error?: string; blocked?: boolean }) | null = null;
       try {
         json = JSON.parse(text);
       } catch {
@@ -169,9 +166,14 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
       }
       // A finished run and a turned-away one (429) both say where the month stands.
       if (json?.usage) setUsage(json.usage);
+      // What the answer says this link's house is: a page pasted under the link later is told from it.
+      const answered = json?.listing?.address;
+      if (answered) setHouse((now) => (now.link.trim() === listingUrl ? houseLearned(now, listingUrl, answered) : now));
       if (!res.ok || !json) {
         if (res.status === 413) throw new Error("The photos are too large for one request. Use fewer or smaller photos.");
-        if (res.status === 400 && json?.listing && json.listing.fetched === false) {
+        // The site turned the server away and there is nothing to look at: show the other ways in.
+        // Any other refusal (no asking price, say) is said in its own words, link read or not.
+        if (res.status === 400 && json?.listing && json.blocked === true) {
           setBlocked(json.listing);
           return;
         }
@@ -195,9 +197,11 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
     // A link pasted into the listing field starts the analysis by itself.
     if (tag === "INPUT" && (e.target as HTMLInputElement).id === "listing" && singleLink) {
       e.preventDefault();
-      const url = text.trim();
-      setListingUrl(url);
-      void analyze(url);
+      // It starts by itself only when everything in the form is this link's. Photos or a price
+      // the person put in themselves may be another house's: then the form waits, and says why.
+      const pasted = linkPasted(house, text.trim(), files.length);
+      if (pasted.start) void analyze(pasted.form);
+      else setHouse(pasted.form);
       return;
     }
     // A link pasted into another field is just a link. Anything bigger is a copied listing page.
@@ -210,6 +214,10 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
 
   // A result that does not say it is real is treated as a demo.
   const demo = result ? result.demo !== false : false;
+  // What the box beside the form says about the listing as this browser read it.
+  const read = house.read;
+  const readPhotos = house.filled.photos.length;
+  const readHow = read?.read?.via === "button" ? "From the listing page" : read?.read?.via === "browser" ? "Read through your browser" : "Read from your paste";
 
   return (
     <div className="space-y-8">
@@ -222,8 +230,8 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
                 id="listing"
                 className="input"
                 placeholder="https://www.zillow.com/homedetails/…"
-                value={listingUrl}
-                onChange={(e) => setListingUrl(e.target.value)}
+                value={house.link}
+                onChange={(e) => { const link = e.target.value; setHouse((now) => ({ ...now, link })); }}
               />
               <p className="mt-1.5 text-xs text-ink-500">
                 Paste a link from Zillow, Redfin, Realtor, Movoto, Estately or a brokerage site and the analysis starts by itself.
@@ -280,27 +288,34 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
                   className="input mt-3 font-mono text-xs"
                   rows={3}
                   placeholder="One photo link per line"
-                  value={photoUrls}
-                  onChange={(e) => setPhotoUrls(e.target.value)}
+                  value={house.photoLinks}
+                  onChange={(e) => { const photoLinks = e.target.value; setHouse((now) => ({ ...now, photoLinks })); }}
                 />
               )}
             </div>
           </div>
 
           <div className="flex flex-col gap-4 lg:border-l lg:border-ink-100 lg:pl-5">
-            {pasted && (
-              <p className={`rounded-lg border p-3 text-xs ${pasted.photos ? "border-brand-200 bg-brand-50 text-brand-700" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
-                {pasted.source === "bookmark" ? "From the listing page" : pasted.source === "extension" ? "Read through your browser" : "Read from your paste"}: {pasted.photos} photo{pasted.photos === 1 ? "" : "s"}
-                {pasted.address ? ` · ${pasted.address}` : ""}
-                {pasted.beds ? ` · ${pasted.beds} bd` : ""}
-                {pasted.baths ? ` · ${pasted.baths} ba` : ""}
-                {pasted.sqft ? ` · ${pasted.sqft.toLocaleString()} sqft` : ""}
-                {pasted.photos ? "" : ". No photos came through: drag them from the gallery into the drop zone, or use the flip it bookmark."}
+            {house.notice && (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800" data-form-notice>
+                {house.notice}
+              </p>
+            )}
+            {read && (
+              <p className={`rounded-lg border p-3 text-xs ${readPhotos ? "border-brand-200 bg-brand-50 text-brand-700" : "border-amber-200 bg-amber-50 text-amber-800"}`} data-form-read>
+                {readHow}: {readPhotos} photo{readPhotos === 1 ? "" : "s"}
+                {read.address ? ` · ${read.address}` : ""}
+                {read.beds ? ` · ${read.beds} bd` : ""}
+                {read.baths ? ` · ${read.baths} ba` : ""}
+                {read.sqft ? ` · ${read.sqft.toLocaleString()} sqft` : ""}
+                {read.description && read.description.source !== "meta" ? " · description kept" : " · no description came through"}
+                {read.details?.length ? ` · ${read.details.length} detail line${read.details.length === 1 ? "" : "s"}` : ""}
+                {readPhotos ? "" : ". No photos came through: drag them from the gallery into the drop zone, or use the flip it bookmark."}
               </p>
             )}
             <div>
               <label className="label" htmlFor="asking">Asking price</label>
-              <input id="asking" className="input" placeholder="from listing if readable" inputMode="numeric" value={askingPrice} onChange={(e) => setAskingPrice(e.target.value)} />
+              <input id="asking" className="input" placeholder="from listing if readable" inputMode="numeric" value={house.price} onChange={(e) => { const price = e.target.value; setHouse((now) => ({ ...now, price })); }} />
             </div>
             <button type="submit" disabled={!!status} className="btn-primary mt-auto w-full">
               {status ? (
@@ -365,7 +380,7 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
           <div className="card flex flex-wrap items-center gap-4 p-5">
             <VerdictBadge verdict={result.report.deal.verdict} size="lg" demo={demo} />
             <p className="flex-1 basis-80 text-lg leading-snug">{result.report.deal.decidingFactor}</p>
-            <SaveDealButton payload={{ report: result.report, plan: result.plan, assessment: result.assessment, listing: result.listing, provider: result.provider }} />
+            <SaveDealButton payload={{ report: result.report, plan: result.plan, assessment: result.assessment, listing: result.listing, provider: result.provider, subjectSources: result.subjectSources }} />
           </div>
 
           {result.listing && <ListingCard listing={result.listing} />}
@@ -380,7 +395,7 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
           )}
           <AssessmentView assessment={result.assessment} />
           <PlanView plan={result.plan} demo={demo} />
-          <ReportView report={result.report} hideVerdict demo={demo} />
+          <ReportView report={result.report} hideVerdict demo={demo} sources={result.subjectSources} conditionFrom="photos" />
         </section>
       )}
     </div>
