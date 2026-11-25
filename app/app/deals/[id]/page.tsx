@@ -48,7 +48,7 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
       {payload.listing && <ListingCard listing={payload.listing} />}
       {payload.assessment && <AssessmentView assessment={payload.assessment} />}
       {payload.plan && <PlanView plan={payload.plan} demo={demo} />}
-      <ReportView report={payload.report} hideVerdict demo={demo} />
+      <ReportView report={payload.report} hideVerdict demo={demo} sources={payload.subjectSources} conditionFrom={quick ? "record" : "photos"} />
     </div>
   );
 }

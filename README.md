@@ -31,7 +31,7 @@ assessment. Everything else runs without it.
 Other commands:
 
 ```bash
-npm test            # engine, renovation, listing parser, safe fetching, usage limits, photo reading, both API routes
+npm test            # engine, renovation, listing reader and form, safe fetching, usage limits, photo reading, both API routes
 npm run demo        # end-to-end report on synthetic data, in the terminal
 npm run backtest    # accuracy harness (synthetic until real CSVs exist)
 npm run typecheck && npm run lint
@@ -118,9 +118,9 @@ so a name that changes its answer gains nothing, and again on every redirect.
 Bodies are capped after decompression (gzip and deflate only; brotli is
 refused), and however an exchange ends its socket and decompressor are
 destroyed at once. Uploaded and fetched photos must be real JPEG, PNG, WebP
-or GIF files by their first bytes, whatever their label. The page parser
-(`lib/listing/fetch-listing.ts`) reads any page in one pass: its patterns
-never cross a tag boundary, so a page built to be slow to read is not.
+or GIF files by their first bytes, whatever their label. The page reader
+(`lib/listing/html.ts`) finds tags and text by scanning, one pass over the
+page, so a page built to be slow to read is not (see below).
 
 **Inputs** (`lib/api/inputs.ts`). Both routes check everything a caller sends
 before a run is started. What a person typed (the deal's numbers) must be a
@@ -142,6 +142,145 @@ read off the photos are real and are not). The AI is told only what the
 listing gave, never a made-up year or neighbourhood. A saved deal keeps where
 its numbers came from in `Deal.provider`; deals saved before that column
 existed have none and are shown as demos.
+
+## What the listing said
+
+`lib/listing/` keeps what a listing page says instead of three numbers: its
+description as written, its facts, each with where on the page it was read
+(`data`, `text`, `meta`, `link`) and the page's own words, and the labelled
+lines of its detail sections ("Sewer: Septic Tank"). They come back with the
+result as `listing`, show on the listing card, and are saved with a deal.
+
+**A sentence is not a fact** (`listing-facts.ts`). A page says many things
+that look like a fact about the house and are not: "detached shop built in
+2019" in the remarks of a 1948 house, a month's "Property taxes $452" in a
+payment calculator, the bedrooms of the similar homes further down. So a fact
+is taken only from a place that says that one thing: a line of its own
+("Built in 1987"), a label beside its value, or the page's own data when
+every mention of it on the page agrees. Where the text states a fact twice,
+the first statement stands: a page says its own house first. A reading that
+needs a unit or a period and has none ("Lot size: 7,405", "HOA: $420") is not
+guessed at; its line is kept among the details as written. Text with no lines
+to go by (the
+button on a listing page hands over one run of words; a link preview is a
+sentence) gives only `loose` readings: shown with the words around them,
+never used for the numbers.
+
+**The house's own part of the page** (`zone.ts`). A listing page goes on to
+show other homes, and their prices, rooms and addresses are never this
+house's. Everything is read from the lines before the page turns to them.
+That turn is told by another home, never by words alone: "Similar homes" also
+stands in a row of tabs under the price, and "Other listings by this agent"
+in the header card, where what follows is the house itself. Another home is
+a card: a price the page has not given before, by itself on its line, with
+an address the page has not given before beside it (a whole address, or only
+its street). The house's part ends at a heading over other homes that such a
+card follows, and, whatever the heading says, at such a card with bedrooms
+under its price once the page has given its own price and rooms and gone on
+to describe the house. A price with rooms under it and no new address is the
+house itself: its own price box under its remarks on a two-column page, an
+estimate with the house's rooms repeated under it.
+
+**The headline** (`fetch-listing.ts`). Beds, baths and living area are read
+where the page says them side by side, each number with its own unit ("4 bd
+3 ba 2,340 sqft", "4 BR | 3 BA | 2,340 SF", "Beds: 4 / Baths: 3 / Sq Ft:
+2,340"), or where it states them on lines of their own ("4" over "beds",
+"Approx. 2,340 sq. ft."). Whichever the page says first is the house's, and
+the other fills what the first left out only when the two agree wherever
+both speak. Words between the numbers make a sentence, and a sentence is not
+read. The page's data is used when it contradicts none of that, and a link
+preview's sentence counts first only when it gives all three.
+
+The asking price is an amount of $10,000 or more that nothing says is other
+money: an estimate, a value somebody put on the house, a past sale, the size
+of a price cut, either end of a range. That is said by a label right before
+the amount on its line, or by itself on the line above it ("Home value" /
+"$561,200") or under it ("$561,200" / "Estimate"). The price a listing used
+to have, shown right after the price it has ("$549,000" / "$575,000"), is
+other money too. An amount standing by itself on its line, or behind the word
+"price", is believed before one inside a phrase ("$40,000 in upgrades"),
+wherever the two stand. It is looked for just above the rooms, then at the
+top of the page, then in the dozen lines under the rooms. When what stands
+above the rooms is the house's own other money (what it sold for, an
+estimate of it), the page has no asking price and none is taken from further
+down; when it is a lender's banner or the size of a price cut, the price box
+under the rooms is still read. A text with no lines (the button on a listing
+page) has nothing standing by itself: there what is above the rooms comes
+first, and a small amount beside a much larger one gives way to it.
+
+An address is read backwards from ", ST 12345" (or "City ST 12345", the post
+office's way, when the street is on the same line). Its house number is the
+first number of the run before the city ("1234 E 4500 S", "45200 12 Mile
+Rd"), not counting what a number is counted in ("2 bd 1 ba 850 Square Feet
+712 Day Lily Ln") or a number with a name between it and the next ("Sq Ft
+850 Windfall Realty 100 Main St"). A city by itself on its line takes the
+line above it as its street only when that line is a street and nothing
+else: the line over a city can also be "Built in 1987" or "1 of 37".
+
+Of several addresses on a page, where each stands says whose it is before
+any word does: the house's is beside its price or its rooms (over them,
+between them, right under them), failing that above them. What stands over
+an address only settles between two that stand alike: a site's own name, a
+breadcrumb or "Listed by" over the house's own address is ordinary, and so
+is an office's address under the same words in the price box or at the foot
+of the page.
+
+**Which facts the valuation uses** (`subject.ts`). Living area, bedrooms and
+bathrooms from the listing, as before, and the year built when it is not a
+loose reading. The lot and the garage are read and shown but not used yet:
+the lot adjustment is a placeholder that breaks on acreage, and comes back
+when it is rebuilt against real sales. `subjectSources` in the result says,
+fact by fact, whether it came from the listing, the request or the provider's
+record, and the report says the same in words.
+
+**The description.** Everything under its heading on the page, bullets
+included; the page's own data when that carries the same words in full; and
+failing both, the first long paragraph of prose, marked as a guess. A link
+preview's summary is kept as a summary, with the note that the description
+itself did not come through. The longest string called "description" in a
+page's data is usually the cookie notice, and is not a rule.
+
+**One house at a time** (`form.ts`, `house.ts`, `address.ts`). A reading
+belongs to the link it was made with. When the form moves on to another house
+(another link, or a pasted page with another address, or failing an address
+another price, bedroom count or size), the reading goes, the photo links it
+filled in go with it, and so does the asking price, typed or not. Photos the
+person added themselves stay, the form says so, and a pasted link does not
+start by itself while they or a typed price are in the form. The API refuses
+a `listing` whose own link is a different page from `listingUrl`, and one
+whose address is a different house from what the server read at the link.
+When the site turns the server away the reply says `blocked: true`, also when
+the person's browser had read the page.
+
+**Order of an analysis.** Whether there are sold homes to compare with is
+asked before the AI is. A house nothing can be compared to ends there for
+free, not after its photos were paid for.
+
+**Reading pages in one pass** (`html.ts`). Tags, their attributes and the
+visible text are found by scanning, never by a pattern that can run past a
+tag's end: one page built for the old patterns took six minutes.
+`listing-facts.test.mts` times pages built to be slow through every way a
+page is read.
+
+**Generated pages** (`corpus.test.mts`, `corpus-pages.mts`). Single test
+pages were not enough: a rule added for one page changed what was read on
+others. So one test builds ordinary pages out of small parts in every
+combination: where the price, the address and the rooms stand (also with the
+remarks before the price box, the way a two-column page reads), how each is
+written, what a site puts around its price (a lender's banner, an old price,
+a cut, an office's address), what stands over the address, and how the page
+shows other homes underneath. It does that for four houses and reads each
+page every way a page arrives. The price, the beds, the baths, the living
+area, the address and the year built each have to be the house's own, or
+absent where the page does not state it; and what a page says only of the
+homes it goes on to show is not read at all. `npm test` reads a spread of
+about 6,800 of these pages; `FLIP_CORPUS=full` reads all 20.4 million, which
+takes several hours in one process and about half an hour with one process
+per house and kind of page (the test's header says how).
+
+Not exercised against real listing sites. The pages in the tests, generated
+ones included, are written by hand in the way those sites lay theirs out;
+how well the reader does on the real ones is measured in the accuracy step.
 
 **Tests.** `lib/api/handlers.test.mts` runs both routes with stand-ins for
 the session, the database, the network and the AI;
@@ -193,7 +332,9 @@ PASS is a loss at asking.
 ```
 lib/engine/     pure TypeScript, no I/O: comps, ceiling, arv, deal, rehab, renovation, evaluate
 lib/vision/     Claude vision photo assessment (structured output) + photo fetcher
-lib/listing/    listing-page metadata and photo extraction (fetch-listing.ts parses, read-listing.ts fetches)
+lib/listing/    what a listing page says: html.ts scans it, listing-facts.ts reads facts and description,
+                fetch-listing.ts the headline and photos, read-listing.ts fetches, subject.ts picks what the
+                valuation may use, form.ts + house.ts keep the form to one house
 lib/data/       SalesProvider / ParcelProvider seam; synthetic provider for dev; demo.ts = "is this a demo?"
 lib/net/        safe-fetch.ts: the only way the server fetches an address a person supplied
 lib/usage/      per-person limits and the UsageRun log (limits.ts rules, prisma-store.ts storage)

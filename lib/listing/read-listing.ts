@@ -22,7 +22,7 @@ export async function fetchListing(url: string, timeoutMs = 8000): Promise<Listi
   try {
     const res = await safeFetch(url, { headers: { "user-agent": UA, accept: "text/html,application/xhtml+xml" }, timeoutMs, maxBytes: MAX_HTML_BYTES });
     if (!res.ok) return miss(`${host} returned ${res.status}. Upload the listing photos instead.`);
-    return parseListingHtml(url, res.body.toString("utf8"));
+    return { ...parseListingHtml(url, res.body.toString("utf8")), read: { at: new Date().toISOString(), via: "server" } };
   } catch (err) {
     if (err instanceof UnsafeUrlError) return miss("That link cannot be read from here. Upload the listing photos instead.");
     const why = err instanceof Error && err.name === "TimeoutError" ? "timed out" : "could not be reached";
