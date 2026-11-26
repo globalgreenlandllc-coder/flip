@@ -347,6 +347,45 @@ export function parseListingHtml(url: string, html: string): ListingInfo {
 }
 
 /**
+ * Cities whose names are more than one word, by state, in lower case. Zillow
+ * joins the street and the city of a link with the same hyphen
+ * ("1500-S-336th-St-Federal-Way"), and nothing in the words themselves says
+ * where one ends: "Way", "Place" and "Lake" end streets and cities alike, and
+ * a street can be called "E St". So the city is the last word unless the
+ * link ends in one of these names; guessing by the kinds of words got more
+ * links wrong than it got right. Washington only, where flip opens first:
+ * elsewhere the last word stands, as it always has.
+ */
+const CITIES_OF_SEVERAL_WORDS: Record<string, string[]> = {
+  WA: [
+    "airway heights", "anderson island", "bainbridge island", "battle ground", "beaux arts", "benton city", "big lake", "birch bay", "black diamond", "bonney lake", "browns point", "brush prairie",
+    "camano island", "castle rock", "clallam bay", "cle elum", "clear lake", "clyde hill", "college place", "coulee dam", "dash point", "deer harbor", "deer park", "des moines", "east olympia",
+    "east wenatchee", "electric city", "elk plain", "fall city", "federal way", "fort lewis", "fox island", "friday harbor", "gig harbor", "gold bar", "grand coulee", "grand mound", "granite falls",
+    "hunts point", "joint base lewis mcchord", "kettle falls", "la center", "la conner", "lake forest park", "lake stevens", "lake tapps", "liberty lake", "long beach", "loon lake", "lopez island",
+    "maple valley", "medical lake", "mercer island", "mill creek", "moses lake", "mount vernon", "mountlake terrace", "neah bay", "newman lake", "nine mile falls", "normandy park", "north bend",
+    "oak harbor", "ocean park", "ocean shores", "otis orchards", "pe ell", "point roberts", "port angeles", "port hadlock", "port ludlow", "port orchard", "port townsend", "royal city",
+    "sedro woolley", "snoqualmie pass", "soap lake", "south bend", "south cle elum", "south hill", "south prairie", "spokane valley", "union gap", "university place", "vashon island", "walla walla",
+    "west richland", "white center", "white salmon", "white swan", "yarrow point",
+  ],
+};
+
+/**
+ * Where the street ends and the city begins in the words of a Zillow link:
+ * before the last word, or before the name of a city of several words when
+ * the link ends in one (the longest such name; a street's number and at
+ * least one word of its name stay with the street).
+ */
+function splitStreetAndCity(words: string[], state: string): [string, string] {
+  const known = CITIES_OF_SEVERAL_WORDS[state] ?? [];
+  let cityWords = 1;
+  for (const city of known) {
+    const n = city.split(" ").length;
+    if (n > cityWords && words.length - n >= 2 && words.slice(-n).join(" ").toLowerCase() === city) cityWords = n;
+  }
+  return [words.slice(0, -cityWords).join(" "), words.slice(-cityWords).join(" ")];
+}
+
+/**
  * Portals put the address in the URL path, so even a blocked page tells us
  * which house it is: Zillow "/homedetails/13013-224th-St-E-Graham-WA-98338/…",
  * Redfin "/WA/Graham/13013-224th-St-E-98338/home/…", Realtor
@@ -361,10 +400,16 @@ export function addressFromUrl(url: string): string | undefined {
   }
   const title = (s: string) => s.replace(/-/g, " ").trim();
   // Zillow: /homedetails/<street>-<City>-<ST>-<zip>/<zpid>_zpid/
-  // Street is greedy and the city is the last token before the state, so
-  // "13013-224th-St-E-Graham-WA-98338" splits at Graham, not at St.
-  const z = path.match(/\/homedetails\/(.+)-([A-Za-z.']+)-([A-Z]{2})-(\d{5})\//);
-  if (z) return `${title(z[1])}, ${title(z[2])}, ${z[3]} ${z[4]}`;
+  // Street and city are joined by the same hyphen: see splitStreetAndCity.
+  const z = path.match(/\/homedetails\/([^/]+)-([A-Z]{2})-(\d{5})\//);
+  if (z) {
+    const words = z[1].split("-").filter(Boolean);
+    // A city is letters; a link whose last word before the state is not one has no address flip can read.
+    if (words.length >= 2 && /^[A-Za-z.']+$/.test(words[words.length - 1])) {
+      const [street, city] = splitStreetAndCity(words, z[2]);
+      return `${street}, ${city}, ${z[2]} ${z[3]}`;
+    }
+  }
   // Redfin: /<ST>/<City>/<street>-<zip>/home/<id>
   const r = path.match(/^\/([A-Z]{2})\/([^/]+)\/(.+?)-(\d{5})\/home\//);
   if (r) return `${title(r[3])}, ${title(r[2])}, ${r[1]} ${r[4]}`;

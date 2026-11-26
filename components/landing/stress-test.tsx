@@ -18,7 +18,7 @@ function money(n: number): string {
   return `${n < 0 ? "−" : ""}$${Math.round(Math.abs(n)).toLocaleString("en-US")}`;
 }
 
-const TONE: Record<Verdict, string> = { GO: "text-go", TIGHT: "text-tight", PASS: "text-pass" };
+const TONE: Record<Verdict, string> = { GO: "text-go", TIGHT: "text-tight", PASS: "text-pass", "CHECK FIRST": "text-ink-700" };
 
 function Slider({ label, value, min, max, step, onChange }: { label: string; value: number; min: number; max: number; step: number; onChange: (n: number) => void }) {
   return (

@@ -1,6 +1,7 @@
 import type { PhotoAssessment } from "@/lib/vision/schema";
 import type { ListingInfo, ListingVia } from "@/lib/listing/fetch-listing";
 import { SOURCE_WORDS, type FactKey } from "@/lib/listing/listing-facts";
+import { AREA_TIME_ZONE } from "@/lib/area";
 import { Block, money } from "./report-view";
 
 const HOW_READ: Record<ListingVia, string> = {
@@ -48,7 +49,7 @@ export function ListingCard({ listing }: { listing: ListingInfo }) {
   const description = listing.description;
   const summaryOnly = description?.source === "meta";
   const ways = listing.read ? [listing.read.via, ...(listing.read.with ?? [])] : [];
-  const readOn = listing.read ? new Date(listing.read.at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : null;
+  const readOn = listing.read ? new Date(listing.read.at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: AREA_TIME_ZONE }) : null;
   return (
     <div className="card p-4 text-sm" data-listing-card>
       <div className="font-medium">{listing.address ?? listing.title ?? (listing.url || "Pasted listing page")}</div>

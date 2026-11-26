@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { createEvaluateHandler } from "@/lib/api/evaluate";
-import { getProviders } from "@/lib/data";
+import { demoProviders } from "@/lib/data";
 import { limitsFromEnv } from "@/lib/usage/limits";
 import { prismaUsageStore } from "@/lib/usage/prisma-store";
 
@@ -10,5 +10,6 @@ export const POST = createEvaluateHandler({
   usage: prismaUsageStore,
   limits: () => limitsFromEnv(),
   now: () => new Date(),
-  providers: getProviders,
+  // The numbers-only route takes no address and spends no paid data request: it runs on the demo's house.
+  providers: demoProviders,
 });

@@ -54,3 +54,41 @@ model UsageRun {
   @@index([userId, createdAt])
   @@index([kind, createdAt])
 }
+
+/// One request to a paid data provider (RentCast). This is what flip's own
+/// request budget counts (lib/data/budget.ts): the provider has no cap of its
+/// own and charges for every request past the plan's number.
+model DataRequest {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  /// "rentcast"
+  provider   String
+  /// "property" (one address) or "sales" (the sold homes around a point)
+  kind       String
+  /// Who caused it (the signed-in person). Empty for a script.
+  userId     String?
+  /// "started" | "billed" (answered 200) | "unknown" (no answer came back: counted as billed) |
+  /// "free" (answered with another status, which is not billed). A request the budget refused leaves no row.
+  status     String   @default("started")
+  httpStatus Int?
+  /// Records in the answer.
+  results    Int?
+  ms         Int?
+
+  @@index([provider, createdAt])
+  @@index([userId, createdAt])
+}
+
+/// What a data provider answered, kept so the same question is not paid for
+/// twice. `payload` is already reduced to the fields flip uses (lib/data/rentcast.ts
+/// PropertyRecord): never an owner's name or mailing address.
+model DataCache {
+  key       String   @id
+  provider  String
+  fetchedAt DateTime
+  expiresAt DateTime
+  /// JSON
+  payload   String
+
+  @@index([expiresAt])
+}

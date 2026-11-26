@@ -4,9 +4,9 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 import type { DealPayload } from "@/lib/deals";
 import { VerdictBadge } from "@/components/ui/verdict";
-import { DemoBanner } from "@/components/ui/demo";
-import { isDemoProvider } from "@/lib/data/demo";
-import { ReportView, money } from "@/components/report/report-view";
+import { DemoBanner, UntestedBanner } from "@/components/ui/demo";
+import { isDemoProvider, isUntestedProvider } from "@/lib/data/demo";
+import { ReportView, WithheldNote, money } from "@/components/report/report-view";
 import { PlanView } from "@/components/report/plan-view";
 import { AssessmentView, ListingCard } from "@/components/report/assessment-view";
 import { DeleteDealButton } from "@/components/app/delete-deal-button";
@@ -21,6 +21,7 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
   const payload = JSON.parse(deal.payload) as DealPayload;
   // The column, not the payload: the payload is whatever the browser sent when it saved.
   const demo = isDemoProvider(deal.provider);
+  const untested = isUntestedProvider(deal.provider);
   const quick = !payload.assessment;
 
   return (
@@ -39,16 +40,18 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
       </div>
 
       {demo && <DemoBanner kind={quick ? "quick" : "analysis"} />}
+      {untested && <UntestedBanner />}
 
       <div className="card flex flex-wrap items-center gap-4 p-5">
-        <VerdictBadge verdict={payload.report.deal.verdict} size="lg" demo={demo} />
+        <VerdictBadge verdict={payload.report.deal.verdict} size="lg" demo={demo} untested={untested} />
         <p className="flex-1 basis-80 text-lg leading-snug">{payload.report.deal.decidingFactor}</p>
       </div>
+      <WithheldNote reasons={payload.report.deal.withheld} />
 
       {payload.listing && <ListingCard listing={payload.listing} />}
       {payload.assessment && <AssessmentView assessment={payload.assessment} />}
-      {payload.plan && <PlanView plan={payload.plan} demo={demo} />}
-      <ReportView report={payload.report} hideVerdict demo={demo} sources={payload.subjectSources} conditionFrom={quick ? "record" : "photos"} />
+      {payload.plan && <PlanView plan={payload.plan} demo={demo} untested={untested} />}
+      <ReportView report={payload.report} hideVerdict demo={demo} untested={untested} sources={payload.subjectSources} conditionFrom={quick ? "record" : "photos"} data={untested ? payload.data : undefined} />
     </div>
   );
 }

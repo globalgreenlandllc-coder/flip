@@ -4,10 +4,11 @@ import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { getProviders, isDemoProvider } from "@/lib/data";
+import { providerToSave } from "@/lib/data/demo";
+import { rentcastFromEnv } from "@/lib/data/house-data";
 import { MAX_SAVED_DEALS, dealTitle, type DealPayload } from "@/lib/deals";
 
-const VERDICTS = new Set(["GO", "TIGHT", "PASS"]);
+const VERDICTS = new Set(["GO", "TIGHT", "PASS", "CHECK FIRST"]);
 const MAX_PAYLOAD_CHARS = 900_000;
 
 /**
@@ -31,11 +32,11 @@ export async function saveDeal(payload: DealPayload): Promise<SaveDealResult> {
   if (stored.length > MAX_PAYLOAD_CHARS) return { ok: false, error: "That result is too large to save." };
   if ((await db.deal.count({ where: { userId } })) >= MAX_SAVED_DEALS) return { ok: false, error: `You have ${MAX_SAVED_DEALS} saved deals, the most an account keeps. Delete some to save more.` };
 
-  // While this server only has made-up market data, nothing it saves can be anything but a demo,
-  // whatever the browser says. Once real data exists the browser's word is all there is for a
-  // result it computed earlier: before a deal can be shared with anyone else, this must be
-  // re-derived on the server.
-  const provider = isDemoProvider(getProviders().name) || typeof payload.provider !== "string" ? "synthetic" : payload.provider.slice(0, 60);
+  // What it is saved as is decided here, not by the browser (lib/data/demo.ts providerToSave): a demo, or a
+  // result on real sold prices that is not a GO. Nothing else, so nothing saved is ever shown without its mark.
+  // Before a deal can be shared with anyone else, the result itself must be re-derived on the server.
+  const provider = providerToSave(payload.provider, deal.verdict, rentcastFromEnv() !== null);
+  if (provider === null) return { ok: false, error: "That result could not be saved. Run the analysis again." };
 
   const { report } = payload;
   const row = await db.deal.create({

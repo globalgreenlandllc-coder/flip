@@ -10,11 +10,13 @@ import Link from "next/link";
 import type { Prefill } from "@/lib/listing/prefill";
 import { analysisStarted, browserRead, formFromPrefill, houseLearned, linkGiven, linkPasted, listingToSend, pagePasted, photoLinksAdded, type HouseForm } from "@/lib/listing/form";
 import { webLink } from "@/lib/listing/house";
-import { ReportView } from "@/components/report/report-view";
+import { ReportView, WithheldNote } from "@/components/report/report-view";
 import { PlanView } from "@/components/report/plan-view";
 import { AssessmentView, ListingCard } from "@/components/report/assessment-view";
 import { VerdictBadge } from "@/components/ui/verdict";
-import { DemoBanner } from "@/components/ui/demo";
+import { DemoBanner, UntestedBanner } from "@/components/ui/demo";
+import { isUntestedProvider } from "@/lib/data/demo";
+import type { DataSource } from "@/lib/data/house-data";
 import { SaveDealButton } from "@/components/app/save-deal-button";
 import type { UsageSummary } from "@/lib/usage/limits";
 import type { SubjectSources } from "@/lib/listing/subject";
@@ -23,6 +25,10 @@ interface AnalyzeResponse {
   /** Where the market data came from; `demo` is true while it is made up. */
   provider?: string;
   demo?: boolean;
+  /** Real sold prices are connected and this run could not have them: why. */
+  fallback?: { code: string; message: string };
+  /** For a result built on real records: which record, how many sold homes, how fresh. */
+  data?: DataSource;
   /** Where each fact about the house came from: the listing, or the provider's record. */
   subjectSources?: SubjectSources;
   warning?: string;
@@ -199,8 +205,11 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
       e.preventDefault();
       // It starts by itself only when everything in the form is this link's. Photos or a price
       // the person put in themselves may be another house's: then the form waits, and says why.
+      // Nor while a run is going: a second run for the same house would pay for its data and its photos twice.
+      // The link is taken, and the person is told what the run that is still going is for.
       const pasted = linkPasted(house, text.trim(), files.length);
-      if (pasted.start) void analyze(pasted.form);
+      if (pasted.start && !status) void analyze(pasted.form);
+      else if (pasted.start) setHouse({ ...pasted.form, notice: "An analysis is still running, for the house that was in the form before. When its result is up, press Analyze for this link." });
       else setHouse(pasted.form);
       return;
     }
@@ -212,8 +221,10 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
     if (tag !== "INPUT" && tag !== "TEXTAREA" && addUrls(text)) e.preventDefault();
   }
 
-  // A result that does not say it is real is treated as a demo.
+  // A result that does not say it is real is treated as a demo. A real one is built on real sold
+  // prices by a method not yet accuracy-tested, and says so wherever its verdict is shown.
   const demo = result ? result.demo !== false : false;
+  const untested = result ? !demo && isUntestedProvider(result.provider) : false;
   // What the box beside the form says about the listing as this browser read it.
   const read = house.read;
   const readPhotos = house.filled.photos.length;
@@ -375,13 +386,14 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
 
       {result && (
         <section className="space-y-8">
-          {demo && <DemoBanner />}
+          {demo ? <DemoBanner why={result.fallback?.message} /> : untested ? <UntestedBanner /> : null}
 
           <div className="card flex flex-wrap items-center gap-4 p-5">
-            <VerdictBadge verdict={result.report.deal.verdict} size="lg" demo={demo} />
+            <VerdictBadge verdict={result.report.deal.verdict} size="lg" demo={demo} untested={untested} />
             <p className="flex-1 basis-80 text-lg leading-snug">{result.report.deal.decidingFactor}</p>
-            <SaveDealButton payload={{ report: result.report, plan: result.plan, assessment: result.assessment, listing: result.listing, provider: result.provider, subjectSources: result.subjectSources }} />
+            <SaveDealButton payload={{ report: result.report, plan: result.plan, assessment: result.assessment, listing: result.listing, provider: result.provider, subjectSources: result.subjectSources, data: result.data }} />
           </div>
+          <WithheldNote reasons={result.report.deal.withheld} />
 
           {result.listing && <ListingCard listing={result.listing} />}
           {result.photosUsed && (
@@ -394,8 +406,8 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
             </p>
           )}
           <AssessmentView assessment={result.assessment} />
-          <PlanView plan={result.plan} demo={demo} />
-          <ReportView report={result.report} hideVerdict demo={demo} sources={result.subjectSources} conditionFrom="photos" />
+          <PlanView plan={result.plan} demo={demo} untested={untested} />
+          <ReportView report={result.report} hideVerdict demo={demo} untested={untested} sources={result.subjectSources} conditionFrom="photos" data={result.data} />
         </section>
       )}
     </div>

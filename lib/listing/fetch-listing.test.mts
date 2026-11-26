@@ -89,6 +89,44 @@ test("reads the address out of portal URLs", () => {
   assert.equal(addressFromUrl("https://example.com/listing/1"), undefined);
 });
 
+test("a Zillow link's city is not cut in half where the city is known to be of several words", () => {
+  const zillow = (slug: string) => addressFromUrl(`https://www.zillow.com/homedetails/${slug}/49182454_zpid/`);
+  // Washington's cities of two and three words, the kind King and Pierce County are full of.
+  assert.equal(zillow("1500-S-336th-St-Federal-Way-WA-98003"), "1500 S 336th St, Federal Way, WA 98003");
+  assert.equal(zillow("4120-Rosedale-St-NW-Gig-Harbor-WA-98335"), "4120 Rosedale St NW, Gig Harbor, WA 98335");
+  assert.equal(zillow("7813-44th-St-W-University-Place-WA-98466"), "7813 44th St W, University Place, WA 98466");
+  assert.equal(zillow("21620-Pacific-Hwy-S-Des-Moines-WA-98198"), "21620 Pacific Hwy S, Des Moines, WA 98198");
+  assert.equal(zillow("17425-Ballinger-Way-NE-Lake-Forest-Park-WA-98155"), "17425 Ballinger Way NE, Lake Forest Park, WA 98155");
+  assert.equal(zillow("450-Main-Ave-S-North-Bend-WA-98045"), "450 Main Ave S, North Bend, WA 98045");
+  assert.equal(zillow("3009-Lake-Rd-Lake-Stevens-WA-98258"), "3009 Lake Rd, Lake Stevens, WA 98258");
+  assert.equal(zillow("22404-Mill-Creek-Blvd-Mill-Creek-WA-98012"), "22404 Mill Creek Blvd, Mill Creek, WA 98012");
+  assert.equal(zillow("610-Alder-St-Unit-B-Mercer-Island-WA-98040"), "610 Alder St Unit B, Mercer Island, WA 98040");
+  assert.equal(zillow("9116-State-Route-9-Lake-Stevens-WA-98258"), "9116 State Route 9, Lake Stevens, WA 98258");
+  assert.equal(zillow("301-W-1st-St-South-Cle-Elum-WA-98943"), "301 W 1st St, South Cle Elum, WA 98943");
+  // The street keeps its number and at least a word of its name: "Mill Creek" here is the street.
+  assert.equal(zillow("15-Mill-Creek-WA-98012"), "15 Mill, Creek, WA 98012");
+
+  // Everywhere else the city is the last word, exactly as it was. Guessing by the kinds of words
+  // (a direction or "St" ends a street) broke each of these in review: streets are named E, S Meridian, Trail Ridge.
+  assert.equal(zillow("8208-243rd-Street-Ct-E-Graham-WA-98338"), "8208 243rd Street Ct E, Graham, WA 98338");
+  assert.equal(zillow("800-5th-Ave-APT-12B-Seattle-WA-98104"), "800 5th Ave APT 12B, Seattle, WA 98104");
+  assert.equal(zillow("1215-E-St-Bellingham-WA-98225"), "1215 E St, Bellingham, WA 98225");
+  assert.equal(zillow("1234-E-E-St-Tacoma-WA-98404"), "1234 E E St, Tacoma, WA 98404");
+  assert.equal(zillow("3912-S-Meridian-Puyallup-WA-98373"), "3912 S Meridian, Puyallup, WA 98373");
+  assert.equal(zillow("3900-NW-Esplanade-Seattle-WA-98117"), "3900 NW Esplanade, Seattle, WA 98117");
+  assert.equal(zillow("77-S-Washington-Sq-Seattle-WA-98104"), "77 S Washington Sq, Seattle, WA 98104");
+  assert.equal(zillow("104-Trail-Ridge-Pass-Austin-TX-78738"), "104 Trail Ridge Pass, Austin, TX 78738");
+  assert.equal(zillow("77-Broadway-Seattle-WA-98102"), "77 Broadway, Seattle, WA 98102");
+  assert.equal(zillow("12-Avenue-C-Brooklyn-NY-11218"), "12 Avenue C, Brooklyn, NY 11218");
+  assert.equal(zillow("500-N-St-Paul-St-Dallas-TX-75201"), "500 N St Paul St, Dallas, TX 75201");
+  // Outside Washington a city of several words is still cut at its last word, as it always was: a known limit.
+  assert.equal(zillow("300-Broadway-New-York-NY-10007"), "300 Broadway New, York, NY 10007");
+  assert.equal(zillow("123-Main-St-St-Louis-MO-63101"), "123 Main St St, Louis, MO 63101");
+  // Not an address.
+  assert.equal(zillow("Seattle-WA-98102"), undefined);
+  assert.equal(zillow("123-Main-St-Unit-4-WA-98102"), undefined);
+});
+
 test("parses a copied listing page: photos from the HTML, facts from the text", () => {
   const html = `<div><h1>8208 243rd Street Ct E, Graham, WA 98338</h1><span>$589,000</span>
     <img src="https://photos.zillowstatic.com/fp/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-cc_ft_960.jpg" srcset="https://photos.zillowstatic.com/fp/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-cc_ft_1536.jpg 1536w">

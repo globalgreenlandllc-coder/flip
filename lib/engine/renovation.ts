@@ -111,10 +111,16 @@ export interface RenovationInput {
   costs?: Record<CategoryKey, CategoryCost>;
 }
 
+/**
+ * A house whose bathroom count nobody gave is priced as having two, and its line in the plan says
+ * so. One would be the least it can have, and the least is the number that flatters the deal.
+ */
+const BATHS_WHEN_UNKNOWN = 2;
+
 function unitCost(range: [number, number], unit: CategoryCost["unit"], subject: PropertyFacts, key: CategoryKey): [number, number] {
   // Windows "replace" is priced per sqft of living area; its "refresh" is flat.
   const perSqft = unit === "sqft" || (key === "windows" && range[0] < 100);
-  const mult = perSqft ? subject.sqft : unit === "bath" ? Math.max(1, subject.baths) : 1;
+  const mult = perSqft ? subject.sqft : unit === "bath" ? Math.max(1, subject.baths ?? BATHS_WHEN_UNKNOWN) : 1;
   return [range[0] * mult, range[1] * mult];
 }
 
@@ -139,9 +145,11 @@ export function planRenovation(input: RenovationInput): RenovationPlan {
     const need = needs[key] ?? "unknown";
     const refresh = unitCost(c.refresh, c.unit, subject, key);
     const replace = unitCost(c.replace, c.unit, subject, key);
-    const make = (action: PlanAction, cost: [number, number], valueAdded: number, reason: string): PlanItem => {
+    const make = (action: PlanAction, cost: [number, number], valueAdded: number, why: string): PlanItem => {
       const costLikely = mid(cost);
       const net = valueAdded - costLikely;
+      // A cost that rests on an assumed number of bathrooms says so on its own line.
+      const reason = c.unit === "bath" && subject.baths === null && costLikely > 0 ? `${why} The number of bathrooms is not known: priced as ${BATHS_WHEN_UNKNOWN}.` : why;
       return { key, label: c.label, need, action, costLow: cost[0], costLikely, costHigh: cost[1], valueAdded, net, roi: costLikely > 0 ? net / costLikely : NaN, reason };
     };
 

@@ -26,14 +26,17 @@ npm run dev                      # http://localhost:3000
 ```
 
 Put an Anthropic key in `.env.local` as `ANTHROPIC_API_KEY` for the photo
-assessment. Everything else runs without it.
+assessment, and a RentCast key as `RENTCAST_API_KEY` for real sold prices.
+Without the second, every result is a demo built on made-up sales, and says
+so.
 
 Other commands:
 
 ```bash
-npm test            # engine, renovation, listing reader and form, safe fetching, usage limits, photo reading, both API routes
+npm test            # engine, data provider and its budget, listing reader and form, safe fetching, usage limits, photo reading, both API routes
 npm run demo        # end-to-end report on synthetic data, in the terminal
 npm run backtest    # accuracy harness (synthetic until real CSVs exist)
+npm run rentcast:check -- "street, city, ST zip"   # what RentCast says of a real house (spends real requests; see the script)
 npm run typecheck && npm run lint
 ```
 
@@ -77,8 +80,10 @@ npx vercel --prod                     # manual deploy
 ```
 
 Environment variables on the project: the Clerk keys and URLs, `ANTHROPIC_API_KEY`,
-`DATA_PROVIDER`, and the Neon `DATABASE_URL` / `DATABASE_URL_UNPOOLED` set by the
-integration. The build runs `prisma migrate deploy` before `next build`.
+`RENTCAST_API_KEY` (real sold prices; see below), and the Neon `DATABASE_URL` /
+`DATABASE_URL_UNPOOLED` set by the integration. The build runs
+`prisma migrate deploy` before `next build`. A setting changed on the project
+takes hold with the next deployment.
 
 Clerk is still the development instance. Before real customers sign up,
 create a production instance in the Clerk dashboard and swap the two keys.
@@ -134,14 +139,234 @@ back is not. The person is told which of three things will help: wait, use
 different photos, or nothing (it is ours to fix). The AI service's own error
 text stays in the log.
 
-**DEMO** (`lib/data/demo.ts`, `components/ui/demo.tsx`). While the data
-provider is `synthetic`, every result is a demo: the API says `demo: true`,
-the verdict badge carries the word DEMO, and each number built on the made-up
-sales or the made-up property record is tagged, risk flags included (the ones
-read off the photos are real and are not). The AI is told only what the
-listing gave, never a made-up year or neighbourhood. A saved deal keeps where
-its numbers came from in `Deal.provider`; deals saved before that column
-existed have none and are shown as demos.
+**DEMO** (`lib/data/demo.ts`, `components/ui/demo.tsx`). A result built on
+the made-up sales is a demo: the API says `demo: true`, the verdict badge
+carries the word DEMO, and each number built on the made-up sales or the
+made-up property record is tagged, risk flags included (the ones read off the
+photos are real and are not). The AI is told only what the listing gave,
+never a made-up year or neighbourhood. That is every result while no data
+provider is connected, and with one connected, any result real data could not
+be had for (it says why first). A saved deal keeps where its numbers came
+from in `Deal.provider`; deals saved before that column existed have none and
+are shown as demos. Quick Numbers and `POST /api/v1/evaluate` take no address
+and always run on the demo's house.
+
+## Real sold prices
+
+With `RENTCAST_API_KEY` set, a full analysis is built on the house's own
+public record and on real sold homes around it, read from RentCast
+(`lib/data/`). Nothing else changes hands: the listing still comes from the
+person, the photos still go to the AI.
+
+**What is asked** (`rentcast.ts`, `house-data.ts`). Two questions: the
+property record at the listing's address, and the single homes of similar
+size that sold around it. One request returns at most 500 records and does
+not say which 500 (asked for five miles around a house in Graham, the real
+service left out nearly everything between one mile and three), so the
+search widens in the engine's own steps, each small enough to come back
+whole: a mile and a year; then, only if that leaves fewer than five
+comparable sales, two and a half miles and eighteen months; then five miles
+and two years. Where even one step matches more than 500, it is asked again
+over the radius that would hold about 425 of them if they were spread
+evenly. When that comes back whole, every sale within it has been read and
+the result says so; when it does not (homes stand closer together near the
+house), or cannot be asked, the result says that what it read is a part and
+may not include the nearest. A house in a town costs two
+requests and one further out three or four. Five is the most one run may
+send: the record and four searches, each counted whether it was answered
+from what was kept, by RentCast, or not at all, so that a later run for the
+same house asks the same questions and stops in the same place. All the
+asking for one house has 40 seconds.
+
+**Is it the same house** (`address-match.ts`). An answer is not taken on
+trust: a service that places addresses on a map can answer with the house
+next door. Whether RentCast ever does has not been seen; the check does not
+depend on it. Nor can two addresses be compared letter by letter (the listing
+says "13013 224th Street East", the record "13013 224th St E"), so both are
+taken apart the same way and compared part by part. The street number must
+be the same, as written ("500-4" is not "5004"). A unit must be the same
+unit, or absent on both sides: a unit is whatever follows "#", "Apt", "Unit"
+and the like, whatever it is called ("4", "12-B", "PH1", "A-1"), and any
+part of the address that stands between the street and the city
+("Penthouse", "Rear"); a building, a floor or a room is not the unit of the
+same number, and a hyphen between two numbers is part of a unit's name
+("11-2" is not "1-12"). The street's own name must be the same ("N St" is not "North
+St"). The kind of street ("St", "Ave", "St Ct") must be the same, or the one
+kind left out on one side ("224th St E" is not "224th St Ct E"); the compass
+words the same wherever they stand, or none on one side ("100 N Main St" is
+not "100 Main St S"). And the place: the same zip code, or, where one side
+gives no zip, the same city, and never two states. With neither to go by it
+is not known to be the house.
+
+A page often gives an address in two pieces, which arrive with no comma
+between street and city ("1500 S 336th St Federal Way, WA 98003"), and
+nothing in such a line says where the street ends: "Way" is a kind of
+street. So the record's own city is looked for at its end. Where the line
+names another city for the same zip code (a post office serves more than
+one), it must begin with the record's whole street, kind and compass words
+and all, and go on with one word that can only be a city's name: a city of
+two words ("South Hill", "Des Moines") is not found that way, because two
+words after a street may be more street ("5300 Lake St Clair Dr SE" is not
+"5300 Lake St"). With its comma in place a line is read as the comma says.
+
+The rule errs toward "not this house" on purpose: a wrong record would put
+another house's facts and comps under a real result. It was built against
+three tables of pairs (`address-match.test.mts`): 113 that are one house
+written two ways, 88 that are two houses, and 12 that are one house as
+likely as not and are turned away all the same, so that taking one of them
+is a decision somebody makes. And against houses made from parts and written
+every way a listing writes them (a spread of them in `npm test`;
+`FLIP_ADDRESSES=full` reads forty times as many). A house it turns away gets
+the demo, and is told which of two things happened: the records have no such
+property, or they answered with a record (its address is given) that could
+not be told to be the same home.
+
+**What is kept** (`rentcast.ts` `PropertyRecord`). Of each record: where it
+is, its size, rooms, year, lot, garage spaces when counted, its kind, and its
+last sale. The owner's name and mailing address, the legal description and
+the tax history are in RentCast's answer and are never read into a variable,
+stored or logged. Every answer is kept in `DataCache`, already reduced (a
+house's record for 30 days, a search for 7), so the same question is not
+paid for twice: the same house, however its address is written ("Rd." or
+"Road", "North Main" or "N Main", a comma more or less, the zip with its
+four extra digits), with a size within the same hundred square feet. An
+answer that holds another house's record is the answer to one writing of the
+address and to no other ("Apt 4" may be found where "#4" was not). It is
+kept for a day under the address exactly as it was written, so that the same
+writing is not paid for twice in a sitting, and is never said of another
+writing or served as the house's. "No such address" costs nothing and is not
+kept at all. "No home sold that matched" is an answer and is kept like one,
+so a house in the country, whose first mile is empty, does not need the
+budget again to be told so. A second run
+started while the first is still asking waits for its answer, for no longer
+than its own time. Only an answer is shared: when a question is refused or
+fails, the first of those waiting asks again and the rest wait for that one.
+Another size is another search. What a later run does pay for is what an
+earlier one asked and got no answer to.
+
+All the asking for one house has 40 seconds, whatever the database and the
+service do: past that the caller has its answer (the demo, with the reason),
+a request already sent is still finished, recorded and kept for next time,
+and a request not yet sent is not sent and comes off the record.
+
+The sold homes are read as they stand today. A valuation dated another day
+(the API takes `asOf`; the app never sends one) gets the demo and is told
+why: a record keeps only a home's last sale, so what stood on record on
+another day cannot be read now.
+
+**What it costs, and the budget** (`budget.ts`). RentCast bills a request
+answered 200; it has no hard cap, and every request past the plan's monthly
+number is charged by itself (20 cents on the free plan); its month runs from
+the day the plan was opened. So flip keeps its own count in `DataRequest`:
+at most `FLIP_RENTCAST_REQUESTS` (default 40, for the free plan's 50) in any
+31 days in a row, and at most `FLIP_RENTCAST_PER_PERSON` (default 30) of
+those caused by one person. A request is written down before it is sent and
+counted after, so a burst can be refused too eagerly, never let past the
+budget; one that got no answer counts, because it may have been billed; one
+answered with another status (an address that is not on record) does not.
+If the count cannot be taken, nothing is sent. `FLIP_RENTCAST_REQUESTS=0`
+switches real data off. Set the plan's own usage alerts in RentCast's
+dashboard as well.
+
+What that count does not see is everything asked with the same key from
+somewhere else: `npm run rentcast:check` (which keeps a count of its own for
+one run), a preview deployment with its own database, `npm run dev` with the
+key. The plan's month is one, whoever asks. So the default leaves ten of the
+fifty over, the key belongs on Production only, and checking twenty houses
+by hand (40 to 80 requests) needs the paid plan or the site's budget set to
+0 for that month.
+
+A run that ends before the AI is asked does not count against a person's
+month of analyses, and may still have spent data requests (a house with a
+record and nothing to compare it with). What bounds that is the person's
+share. On the free plan two accounts can use up everybody's real data for a
+month; nobody can make it cost money.
+
+**When real data cannot be had** for a house (no address came with the
+listing, no such record, land or an apartment building, nobody gives its
+living area, the records around it give sale dates and no prices, the budget
+or the person's share used up, the service down or refusing flip's key), the
+analysis still runs, as a demo, and the first line of its DEMO notice says
+which of those it was. A result is never part real sales and part made-up
+ones. Two more reasons are not about the house: an answer that could not be
+told to be its record (said with the address that came back), and a
+valuation dated another day than today. A house with a record and no
+comparable sold homes ends before the AI is asked, for free, and is told how
+far the search really went, on what day the records were read (an answer may
+have been kept for up to a week), and which of three things it found: that
+no home of similar size sold there, that homes sold and none has a price on
+record that can be used, or that homes sold and none is close enough to this
+one to price it from. Which of their differences leaves them out is not
+said, since no one of them is known to be the reason.
+
+**UNTESTED, and CHECK FIRST** (`lib/engine/gate.ts`). The sold prices are
+real. The method that turns them into a resale value has only ever been run
+against made-up data, and its adjustment rates are placeholders. So every
+result built on real sales says UNTESTED in the verdict itself, shows where
+its numbers came from (which record, how many sold homes within what
+distance, how fresh), says so when what it read was a part (more homes
+matched than one request returns) or when the search could not be taken as
+wide as it would have gone, and lists every sale used with its address and
+date so it can be checked. The engine widens no further than the search did:
+sales read within two and a half miles are never called "comps within five".
+And a GO is never given: where the deal math says GO, the verdict is CHECK
+FIRST with what would clear it. The area's accuracy test is one reason; a
+low-confidence resale value is a second, said as what makes it low (too few
+comparable sales, prices that lie far apart, or sales that had to be looked
+for far away), not as a list of what it might be. TIGHT and PASS stand as
+they are.
+
+What a saved deal is saved as is decided on the server
+(`lib/data/demo.ts` `providerToSave`): a demo, or a result on real sold
+prices that is not a GO. Nothing else, so nothing saved is ever shown as a
+verdict without its mark. The numbers in it still rest on the browser's word
+for a result computed earlier, and only that person ever sees it.
+
+**What the engine does with real records** (`comps.ts`, `ceiling.ts`,
+`defaults.ts`). They differ from the demo's in four ways. *They do not say
+what condition a house sold in*: no sale is adjusted for condition, the value
+is what homes like this one have been selling for and not what the
+best-finished one fetched, confidence is never HIGH, and the ceiling is drawn
+from the dearest tenth of the sold homes of similar size that were read
+around the house and stand in its zip code (ten or more), not from
+"renovated" ones. It is said as that, never as "the zip code's": the rest of
+the zip code was not read. Such a ceiling is a rough guide and never a cap:
+it sets the finish level the remodel plan advises and takes no line out of
+it, and where the homes sold right around the house went for more than it,
+the report says the ceiling is not known. *They leave facts out*: a fact one
+side does not give (a garage's size, as a rule) makes no adjustment, is named
+on the comp's row, and is shown for the house as "not known", never as a
+number. The one place a number is assumed is the remodel plan's bathrooms
+line, which prices an unknown count as two and says so. *They carry prices
+that were never a market price*: a sale whose price per square foot is under
+a quarter or over four times the median of all the sales read (five or more)
+is left out, and the report says how many were. The band is that wide on
+purpose: at half and twice it would leave out a street that really is cheap,
+or dear, next to the mile around it. A sale dated before the year the house
+was built was the sale of the lot, and is not read as a sold home at all;
+nor is a "price" under $10,000. And a new house's record shows the builder's
+purchase of the lot until the finished house sells: a sale in the year the
+house was built at under half the going rate per square foot is left out as
+that (six of them on a new street were the nearest comps of every house on
+it, and put a $520,000 house at $133,000). *They are old*: a sale reaches
+the records about three months after it closes (seen on real answers for
+Seattle and Graham, 2026-11-25); older sales are taken at the price they
+sold for, with no rate for time until one is fitted, and a newest comp older
+than four months is a risk flag. Land does not count the same by the foot at
+every size: the first 10,000 sqft of a lot in full, the rest of an acre at a
+quarter, acreage beyond at a twentieth (a flat rate once threw out four comps
+of five for a house on an acre).
+
+**Listing against record.** Where the listing and the public record disagree
+(living area a tenth apart, a bedroom or a whole bathroom, the year by more
+than two), the result carries a risk flag that says both and why it matters:
+space the county has no record of is often work done without a permit. The
+valuation goes by the listing.
+
+Not measured: how right any of this is. The check of RentCast on 20 real
+houses and the accuracy test against completed flips are the next two steps;
+`npm run rentcast:check` is the tool for the first, and its requests come
+out of the same plan as the site's (see the budget above).
 
 ## What the listing said
 
@@ -227,10 +452,11 @@ of the page.
 
 **Which facts the valuation uses** (`subject.ts`). Living area, bedrooms and
 bathrooms from the listing, as before, and the year built when it is not a
-loose reading. The lot and the garage are read and shown but not used yet:
-the lot adjustment is a placeholder that breaks on acreage, and comes back
-when it is rebuilt against real sales. `subjectSources` in the result says,
-fact by fact, whether it came from the listing, the request or the provider's
+loose reading. The listing's lot and garage are read and shown but not used:
+a misread lot ("on a 1/4 acre lot") once emptied a comp set. With real
+records connected the lot comes from the public record instead, and counts
+less by the foot the larger it is. `subjectSources` in the result says, fact
+by fact, whether it came from the listing, the request or the provider's
 record, and the report says the same in words.
 
 **The description.** Everything under its heading on the page, bullets
@@ -283,18 +509,22 @@ ones included, are written by hand in the way those sites lay theirs out;
 how well the reader does on the real ones is measured in the accuracy step.
 
 **Tests.** `lib/api/handlers.test.mts` runs both routes with stand-ins for
-the session, the database, the network and the AI;
+the session, the database, the network, the data provider and the AI;
 `lib/vision/analyze-photos.test.mts` runs the photo reading against a
-stand-in for the AI's API on this machine. The same counting rules
-run against a real Postgres when one is named:
+stand-in for the AI's API on this machine; `lib/data/` is tested against a
+stand-in for RentCast's API (`rentcast-fixtures.mts`: made-up addresses in
+the real answers' shape, each with an owner block the reader must drop). The
+counting rules of both stores (usage limits, the data budget) run against a
+real Postgres when one is named:
 `FLIP_TEST_DATABASE_URL=postgresql://…@127.0.0.1/… npm test` (a database on
-this machine with the migrations applied; the test refuses any other host).
+this machine with the migrations applied; the tests refuse any other host).
 
 ## How the valuation works
 
 **Comp selection with progressive relaxation.** Start at 0.5 mi / 6 months /
 ±20% sqft. Widen tier by tier until at least five comps survive. Confidence
-drops with every tier used.
+drops with every tier used. (Real sold records widen further, to 5 mi / 24
+months: see "Real sold prices".)
 
 **Appraiser-style adjustments.** Each comp is time-adjusted, then adjusted
 line by line (sqft, lot, beds, baths, garage, age, condition) to look like the
@@ -335,14 +565,16 @@ lib/vision/     Claude vision photo assessment (structured output) + photo fetch
 lib/listing/    what a listing page says: html.ts scans it, listing-facts.ts reads facts and description,
                 fetch-listing.ts the headline and photos, read-listing.ts fetches, subject.ts picks what the
                 valuation may use, form.ts + house.ts keep the form to one house
-lib/data/       SalesProvider / ParcelProvider seam; synthetic provider for dev; demo.ts = "is this a demo?"
+lib/data/       where the sold homes and property records come from: rentcast.ts (the wire), budget.ts (what may be
+                spent, and the kept answers), house-data.ts (one house's data, real or the demo's and why),
+                synthetic-provider.ts (the demo), demo.ts = "is this a demo, or real and untested?"
 lib/net/        safe-fetch.ts: the only way the server fetches an address a person supplied
 lib/usage/      per-person limits and the UsageRun log (limits.ts rules, prisma-store.ts storage)
 lib/api/        the two API routes without their plumbing (testable), and input checks
 app/            landing, auth pages, app shell (/app), API routes
 components/     report views, analyzer, evaluator, app shell pieces
-prisma/         Deal and UsageRun models (Postgres)
-scripts/        demo.mts, backtest.mts
+prisma/         Deal, UsageRun, DataRequest and DataCache models (Postgres)
+scripts/        demo.mts, backtest.mts, rentcast-check.mts
 docs/           DATA.md (sources, calibration), DEMO-PHOTOS.md
 ```
 
@@ -383,10 +615,12 @@ costs them money.
 ## Status
 
 Phase 0 plus the listing analyzer and the SaaS shell (auth, saved deals).
-All market data is synthetic (`lib/engine/synthetic.ts`) and the adjustment
-and rehab rates in `lib/engine/defaults.ts` / `lib/engine/renovation.ts` are
-placeholders. The photo assessment is real. Nothing here is a valuation
-until phase 1 replaces the data and calibrates the rates.
+The photo assessment is real. With a RentCast key the property record and
+the sold homes are real too; without one, all market data is synthetic
+(`lib/engine/synthetic.ts`). Either way the adjustment and rehab rates in
+`lib/engine/defaults.ts` / `lib/engine/renovation.ts` are placeholders, and
+no result has been accuracy-tested. Nothing here is a valuation until the
+rates are fitted and the accuracy test is passed.
 
 Listing links: paste one and the analysis starts. The page is read for its
 metadata and photos. Zillow, Redfin, Realtor and Trulia block server reads,

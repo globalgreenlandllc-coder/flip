@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { auth } from "@clerk/nextjs/server";
 import { limitsFromEnv } from "@/lib/usage/limits";
+import { rentcastFromEnv } from "@/lib/data/house-data";
 import { Logo } from "@/components/ui/logo";
 import { VerdictBadge } from "@/components/ui/verdict";
 import { HeroCard } from "@/components/landing/hero-card";
@@ -12,30 +13,46 @@ import { StressTest } from "@/components/landing/stress-test";
 import { Reveal } from "@/components/landing/reveal";
 import { RemodelPlan } from "@/components/landing/remodel-plan";
 
-const QUESTIONS = [
-  { q: "What's the ceiling here?", a: "The top of this block's market. No finish level pushes a house past it, and most flippers lose money by ignoring it." },
-  { q: "What does the finished version sell for?", a: "ARV from sold comps matched on size, beds, baths, age and lot, adjusted line by line and for time." },
+/** `realSales`: real sold prices are connected. They are taken at the price they sold for; only the demo's are moved for time. */
+const questions = (realSales: boolean) => [
+  // Drawn from sales known to be renovated, the ceiling caps the value. Drawn from public records, which never say, it is a guide and is said as one.
+  {
+    q: "What's the ceiling here?",
+    a: realSales
+      ? "Where homes of this size have topped out around the house: what the dearest tenth of the sold homes found near it went for. A guide to how much finish the block repays, and most flippers lose money by ignoring it."
+      : "The top of this block's market. No finish level pushes a house past it, and most flippers lose money by ignoring it.",
+  },
+  { q: "What does the finished version sell for?", a: realSales ? "ARV from sold comps matched on size, beds, baths, age and lot, adjusted line by line." : "ARV from sold comps matched on size, beds, baths, age and lot, adjusted line by line and for time." },
   { q: "What does it need?", a: "Every room scored from the listing photos, with what to fix and what to leave alone." },
   { q: "What does that cost?", a: "Line-item rehab, low / likely / high, plus a reserve for what photos cannot show." },
   { q: "Does the money work?", a: "ARV minus purchase, rehab, holding, financing and closing on both ends. Profit, ROI, and the most you can pay." },
 ];
 
-const STEPS = [
+const steps = (realSales: boolean) => [
   { n: "1", t: "Paste the listing", d: "Drop in the link and the photos. Add the asking price if the page won't give it up.", icon: "M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5" },
   { n: "2", t: "flip runs the numbers", d: "Comps, ceiling, photo assessment, remodel plan and deal math, in about a minute.", icon: "M4 19h16M6 16l4-5 3 3 5-7M17 7h2v2" },
-  { n: "3", t: "Read the verdict", d: "GO, TIGHT or PASS with the one number that decided it, and a report you can hand to a partner or lender.", icon: "M9 12l2 2 4-4M12 3l7 4v5c0 5-3.5 8-7 9-3.5-1-7-4-7-9V7l7-4z" },
+  { n: "3", t: "Read the verdict", d: realSales ? "GO, TIGHT or PASS with the one number that decided it (CHECK FIRST stands in for GO until the estimate is proven in your area), and a report you can hand to a partner or lender." : "GO, TIGHT or PASS with the one number that decided it, and a report you can hand to a partner or lender.", icon: "M9 12l2 2 4-4M12 3l7 4v5c0 5-3.5 8-7 9-3.5-1-7-4-7-9V7l7-4z" },
 ];
 
-const AUDIENCES = [
+const audiences = (realSales: boolean) => [
   { t: "Contractors", d: "You already know what a kitchen costs. flip tells you what the block will pay for it, so you can bring a deal to an investor with a report and win the renovation.", icon: "M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" },
-  { t: "Investors", d: "Stop losing money on ARV. Every comp and every adjustment is on the page, the ceiling is enforced, and the max offer is solved for your target profit.", icon: "M3 17l6-6 4 4 8-8M14 7h7v7" },
+  { t: "Investors", d: realSales ? "Stop losing money on ARV. Every comp and every adjustment is on the page, each sale with its address and date, the block's ceiling is shown beside the value, and the max offer is solved for your target profit." : "Stop losing money on ARV. Every comp and every adjustment is on the page, the ceiling is enforced, and the max offer is solved for your target profit.", icon: "M3 17l6-6 4 4 8-8M14 7h7v7" },
   { t: "Agents & lenders", d: "Score every listing your investor clients look at. Planned: white-label reports for agents, an API for platforms, and a published accuracy number for your metro.", icon: "M4 4h16v12H5.5L4 17.5V4zM8 9h8M8 12h5" },
 ];
 
-const FAQ = [
+/**
+ * What the page says about where the numbers come from is what is true of this deployment: with real
+ * sold prices connected (lib/data/house-data.ts) it says so and says what has not been tested yet;
+ * without, it says the numbers are a demo.
+ */
+const faq = (realSales: boolean) => [
   { q: "Is this an appraisal?", a: "No. It is a decision tool built the way a good appraiser and a good flipper think: comps with visible adjustments, a ceiling for the neighborhood, and deal math with every assumption editable. Verify before you close." },
-  { q: "Where do the comps come from?", a: "In this beta they are demo data: the sales behind the resale numbers are made up, and every number built on them is marked DEMO. Real recorded-sale data is being connected next, one area at a time. The photo reading is real today." },
-  { q: "How accurate is the ARV?", a: "Not measured yet, because the beta runs on demo sales. Before real numbers are turned on in an area, the model is tested against completed flips there: it sees only what was known on purchase day, and its ARV is compared with the actual resale. That measured accuracy will be shown beside every ARV." },
+  realSales
+    ? { q: "Where do the comps come from?", a: "From county public records of sold homes, read through a data service. Each sale used is shown with its address, its date and its price, so you can check it. When a house cannot be looked up (no address, no record of it, or the month's lookups are used up), the result falls back to made-up demo data and is marked DEMO. The photo reading is always real." }
+    : { q: "Where do the comps come from?", a: "In this beta they are demo data: the sales behind the resale numbers are made up, and every number built on them is marked DEMO. Real recorded-sale data is being connected next, one area at a time. The photo reading is real today." },
+  realSales
+    ? { q: "How accurate is the ARV?", a: "Not measured yet. The sold prices are real, but the method that turns them into a resale value has not been tested against completed flips in any area, and its adjustment rates are placeholders. So a result built on real sold prices is marked UNTESTED and is never a GO: where the numbers alone would say GO, it says CHECK FIRST. Before that changes in an area, the model is tested against completed flips there: it sees only what was known on purchase day, and its ARV is compared with the actual resale. That measured accuracy will be shown beside every ARV." }
+    : { q: "How accurate is the ARV?", a: "Not measured yet, because the beta runs on demo sales. Before real numbers are turned on in an area, the model is tested against completed flips there: it sees only what was known on purchase day, and its ARV is compared with the actual resale. That measured accuracy will be shown beside every ARV." },
   { q: "What if the listing site blocks the link?", a: "Some portals block automated reads some of the time. When that happens the page says so and you drop the photos in directly. Everything else works the same." },
   { q: "Who can see my deals?", a: "Only you, and anyone you share a report with. Photos are analyzed and not used for anything else." },
 ];
@@ -148,6 +165,8 @@ export default async function Landing() {
   const primaryLabel = signedIn ? "Open the app" : "Analyze your first house free";
   // The number on the page is the number that is enforced.
   const { monthlyAnalyses } = limitsFromEnv();
+  // Are real sold prices connected? The page says what is true either way.
+  const realSales = rentcastFromEnv() !== null;
 
   return (
     <div className="flex-1">
@@ -172,10 +191,20 @@ export default async function Landing() {
               <a href="#report" className="btn-secondary px-5 py-3">See a report</a>
             </div>
             <p className="fade-up mt-4 max-w-xl text-xs leading-relaxed text-ink-500" style={{ animationDelay: "220ms" }}>
-              No card. Free during beta. About a minute per house. In the beta the photo reading is real; the sales behind the resale numbers are demo data, and every number built on them is marked DEMO.
+              {realSales
+                ? "No card. Free during beta. About a minute per house. The photo reading and the sold prices are real. The resale estimate built on them has not been accuracy-tested yet, so a result built on real sold prices is marked UNTESTED and is never a GO: where the numbers alone would say GO, it says CHECK FIRST. A house that cannot be looked up gets made-up demo numbers, marked DEMO."
+                : "No card. Free during beta. About a minute per house. In the beta the photo reading is real; the sales behind the resale numbers are demo data, and every number built on them is marked DEMO."}
             </p>
             <div className="fade-up mt-10 grid gap-2 text-sm text-ink-700 sm:grid-cols-3 lg:grid-cols-1" style={{ animationDelay: "260ms" }}>
-              {([["GO", "the money works, even at ARV −10%"], ["TIGHT", "works at asking, not at your target"], ["PASS", "you would lose money"]] as const).map(([v, t]) => (
+              {(
+                [
+                  ["GO", "the money works, even at ARV −10%"],
+                  ["TIGHT", "works at asking, not at your target"],
+                  ["PASS", "you would lose money"],
+                  // With real sold prices connected, this is what stands where a GO would, until an area's accuracy test is passed.
+                  ...(realSales ? ([["CHECK FIRST", "the numbers work; the estimate is not proven here yet"]] as const) : []),
+                ] as const
+              ).map(([v, t]) => (
                 <div key={v} className="flex items-center gap-2.5 rounded-xl border border-ink-200/70 bg-white/70 px-3 py-2">
                   <VerdictBadge verdict={v} size="sm" />
                   <span className="text-[13px] leading-snug">{t}</span>
@@ -187,7 +216,7 @@ export default async function Landing() {
         </div>
       </section>
 
-      <Showcase />
+      <Showcase realSales={realSales} />
 
       {/* Five questions */}
       <section className="mx-auto max-w-6xl px-6 py-24">
@@ -197,7 +226,7 @@ export default async function Landing() {
           <p className="mt-3 leading-relaxed text-ink-700">A flip goes wrong when one of these is guessed. flip answers all five with the work shown.</p>
         </div>
         <Reveal className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-          {QUESTIONS.map((x, i) => (
+          {questions(realSales).map((x, i) => (
             <div key={x.q} className="relative overflow-hidden rounded-2xl border border-ink-200 bg-white p-5">
               <div aria-hidden className="absolute -right-2 -top-4 text-7xl font-bold tracking-tighter text-ink-100 select-none">0{i + 1}</div>
               <div className="relative">
@@ -235,13 +264,19 @@ export default async function Landing() {
           <div className="eyebrow">For contractors</div>
           <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Spend where the block pays. Stop where it doesn&apos;t.</h2>
           <p className="mt-3 leading-relaxed text-ink-700">
-            flip prices every category against what buyers on this block actually pay for it. What is below par gets brought to par. What is already there is left alone. And when the neighborhood tops out, the plan says so before you put $35,000 into a kitchen the sale will not repay. Drag the ceiling and watch the plan change.
+            {realSales
+              ? "flip prices every category against what buyers on this block actually pay for it. What is below par gets brought to par. What is already there is left alone. And when the house already sits near where homes of its size have topped out, the plan tells you to stay at the median finish, before you put $35,000 into a kitchen the sale will not repay. Drag the ceiling in the example and watch the plan change."
+              : "flip prices every category against what buyers on this block actually pay for it. What is below par gets brought to par. What is already there is left alone. And when the neighborhood tops out, the plan says so before you put $35,000 into a kitchen the sale will not repay. Drag the ceiling and watch the plan change."}
           </p>
         </div>
         <div className="mt-12">
           <RemodelPlan />
         </div>
-        <p className="mt-4 text-xs text-ink-500">Sample house: 1,840 sqft, 3 bd / 2 ba, built 1952, dated condition, comps say $845,000 renovated. Unit costs are placeholders at contractor rates until calibrated for your metro.</p>
+        <p className="mt-4 text-xs text-ink-500">
+          Sample house: 1,840 sqft, 3 bd / 2 ba, built 1952, dated condition, comps say $845,000 renovated. Unit costs are placeholders at contractor rates until calibrated for your metro.
+          {/* The example's ceiling takes lines out of the plan. One drawn from public records does not, and a real result must not be expected to. */}
+          {realSales ? " The ceiling in this example is one that caps the plan. For a real house, where public records do not say which homes were renovated, the ceiling is a guide: it sets the finish level the plan advises and takes no line out of it." : ""}
+        </p>
       </section>
 
       {/* How it works */}
@@ -251,7 +286,7 @@ export default async function Landing() {
           <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">A listing in, a decision out.</h2>
         </div>
         <Reveal><ol className="mt-12 grid gap-5 md:grid-cols-3">
-          {STEPS.map((s) => (
+          {steps(realSales).map((s) => (
             <li key={s.n} className="relative rounded-2xl border border-ink-200 bg-white p-6">
               <div className="flex items-center justify-between">
                 <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-ink-950 text-white"><Icon d={s.icon} /></div>
@@ -270,25 +305,35 @@ export default async function Landing() {
           <div>
             <div className="eyebrow !text-brand-500">The number most calculators skip</div>
             <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Every block has a ceiling. flip finds it.</h2>
+            {/* What the engine does differs with the data: sales known to be renovated cap the value; public records, which never say, only guide it. */}
             <p className="mt-5 leading-relaxed text-white/75">
-              We take every renovated sale in the neighborhood over the last year and find the price per square foot the top decile clears. If the comp math says $700k but the block has never cleared $640k, the report says $640k, and tells you not to put a $60k kitchen in a house that will not pay for it.
+              {realSales
+                ? "Public records do not say which homes were renovated. So we take the sold homes of similar size found around the house, in its zip code, over the last year and find the price per square foot the dearest tenth of them cleared. When the resale value lands close to that, the report tells you not to put a $60k kitchen in a house that will not pay for it. And when the homes sold right around the house went for more, it says the ceiling is not known instead of guessing."
+                : "We take every renovated sale in the neighborhood over the last year and find the price per square foot the top decile clears. If the comp math says $700k but the block has never cleared $640k, the report says $640k, and tells you not to put a $60k kitchen in a house that will not pay for it."}
             </p>
             <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4 font-mono text-sm text-white/85">
-              <div className="text-white/50">realistic ARV =</div>
-              <div className="mt-1">min(comp-based ARV, ceiling × subject sqft)</div>
+              <div className="text-white/50">{realSales ? "ceiling =" : "realistic ARV ="}</div>
+              <div className="mt-1">{realSales ? "top tenth of $/sqft among sold homes nearby × subject sqft" : "min(comp-based ARV, ceiling × subject sqft)"}</div>
             </div>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-            <div className="flex items-center justify-between text-xs text-white/60"><span>Renovated sales, $/sqft, last 12 months</span><span>n = 43</span></div>
+            <div className="flex items-center justify-between text-xs text-white/60"><span>{realSales ? "An example: sold homes of similar size, $/sqft, last 12 months" : "Renovated sales, $/sqft, last 12 months"}</span><span>n = 43</span></div>
             <div className="mt-4 space-y-2.5">
-              {[["Comp-based ARV", 108, "bg-white/40", "$700k"], ["Ceiling (top decile)", 100, "bg-brand-500", "$640k"], ["Median renovated", 88, "bg-white/25", "$565k"], ["This house, as-is", 78, "bg-white/15", "$500k"]].map(([label, w, c, v]) => (
+              {(realSales
+                ? [["Ceiling (the dearest tenth)", 100, "bg-brand-500", "$640k"], ["Resale value from the comps", 92, "bg-white/40", "$590k"], ["Median sale", 88, "bg-white/25", "$565k"], ["This house, as-is", 78, "bg-white/15", "$500k"]]
+                : [["Comp-based ARV", 108, "bg-white/40", "$700k"], ["Ceiling (top decile)", 100, "bg-brand-500", "$640k"], ["Median renovated", 88, "bg-white/25", "$565k"], ["This house, as-is", 78, "bg-white/15", "$500k"]]
+              ).map(([label, w, c, v]) => (
                 <div key={label as string}>
                   <div className="flex justify-between text-xs"><span className="text-white/80">{label}</span><span className="tabular-nums text-white/60">{v}</span></div>
                   <div className="mt-1 h-2.5 rounded-full bg-white/10"><div className={`h-full rounded-full ${c}`} style={{ width: `${Math.min(100, (w as number) * 0.9)}%` }} /></div>
                 </div>
               ))}
             </div>
-            <p className="mt-5 text-sm leading-relaxed text-white/70">The comps say $700k. The block says $640k. The report says $640k, and the remodel plan is sized to it: spend $28k, hit the median finish, sell fast.</p>
+            <p className="mt-5 text-sm leading-relaxed text-white/70">
+              {realSales
+                ? "The comps say $590k and the dearest tenth of the sold homes nearby went for $640k: room for a mid-grade finish, not a luxury one, and the plan's advice follows that. Had the comps come in above $640k, the report would say the ceiling is not known."
+                : "The comps say $700k. The block says $640k. The report says $640k, and the remodel plan is sized to it: spend $28k, hit the median finish, sell fast."}
+            </p>
           </div>
         </div>
       </section>
@@ -316,7 +361,7 @@ export default async function Landing() {
           <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Built for the people who put money into houses</h2>
         </div>
         <Reveal className="mt-12 grid gap-5 md:grid-cols-3">
-          {AUDIENCES.map((a) => (
+          {audiences(realSales).map((a) => (
             <div key={a.t} className="card p-6">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-700"><Icon d={a.icon} /></div>
               <h3 className="mt-5 text-lg font-semibold">{a.t}</h3>
@@ -345,14 +390,14 @@ export default async function Landing() {
               <ul className="mt-5 space-y-2 text-sm">
                 {[
                   "Photo reading of your listing photos, room by room",
-                  "Remodel plan, deal math and stress test, on demo sales data for now",
+                  realSales ? "Remodel plan, deal math and stress test, on real sold prices wherever a house can be looked up (marked UNTESTED)" : "Remodel plan, deal math and stress test, on demo sales data for now",
                   "Saved deals",
                   `${monthlyAnalyses} analyses a month per person`,
                 ].map((i) => <li key={i} className="flex gap-2.5"><Check />{i}</li>)}
               </ul>
               <Link href={primaryHref} className="mt-6 inline-flex items-center justify-center rounded-[0.625rem] bg-white px-4 py-2.5 font-semibold text-ink-950 transition-colors hover:bg-brand-50">{primaryLabel}</Link>
             </div>
-            <p className="mt-4 text-sm text-ink-700">No card. Paid plans come later, once real sales data and payments are in place.</p>
+            <p className="mt-4 text-sm text-ink-700">{realSales ? "No card. Paid plans come later, once the resale estimate has passed its accuracy test and payments are in place." : "No card. Paid plans come later, once real sales data and payments are in place."}</p>
           </Reveal>
         </div>
       </section>
@@ -362,7 +407,7 @@ export default async function Landing() {
         <div className="eyebrow">FAQ</div>
         <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Questions</h2>
         <div className="mt-8 divide-y divide-ink-200 border-y border-ink-200">
-          {FAQ.map((f) => (
+          {faq(realSales).map((f) => (
             <details key={f.q} className="group py-4">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-medium">
                 {f.q}

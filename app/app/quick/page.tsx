@@ -1,6 +1,6 @@
 import { Evaluator } from "@/components/evaluator";
 import { DEFAULT_DEAL_TERMS, DEFAULT_MARKET_CONFIG, evaluate } from "@/lib/engine";
-import { getProviders } from "@/lib/data";
+import { demoProviders } from "@/lib/data";
 
 export const metadata = { title: "Quick numbers" };
 export const dynamic = "force-dynamic";
@@ -9,7 +9,8 @@ const DEMO_ASKING_PRICE = 749_000;
 
 /** Numbers without photos: server-renders a first report, then the client edits assumptions. */
 export default async function QuickNumbersPage() {
-  const providers = getProviders();
+  // Quick Numbers has no address field: it shows the deal math on the demo's made-up house, and says so.
+  const providers = demoProviders();
   const asOf = new Date().toISOString().slice(0, 10);
   const subject = await providers.parcels.lookup("demo");
   let initial = null;
