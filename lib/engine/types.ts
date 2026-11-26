@@ -13,19 +13,33 @@ export interface PropertyFacts {
   /** Neighborhood / zip / tract key used for the ceiling calculation. */
   submarket: string;
   sqft: number;
-  lotSqft: number;
-  beds: number;
-  baths: number;
-  yearBuilt: number;
+  /**
+   * The five below are null when they are not known. A real property record
+   * does not always say them (RentCast seldom gives a garage's size), and a
+   * fact that is not known is never adjusted for and never shown as a number.
+   */
+  lotSqft: number | null;
+  beds: number | null;
+  baths: number | null;
+  yearBuilt: number | null;
   /** Garage spaces. */
-  garage: number;
+  garage: number | null;
   condition: Condition;
 }
 
-export interface Sale extends PropertyFacts {
+/**
+ * A sold home. Its condition is "unknown" when the source is a public record:
+ * that says what a house sold for and when, not what shape it was in.
+ */
+export type SaleCondition = Condition | "unknown";
+
+export interface Sale extends Omit<PropertyFacts, "condition"> {
+  condition: SaleCondition;
   price: number;
   /** ISO date (YYYY-MM-DD). */
   saleDate: string;
+  /** Its street address, when the source gives one: a real sale is one the reader can look up. */
+  address?: string;
 }
 
 /**
@@ -35,7 +49,16 @@ export interface Sale extends PropertyFacts {
  */
 export interface MarketConfig {
   pricePerSqftLiving: number;
+  /** Value of one more square foot of lot, for the part of a lot that counts in full (see lotTaper). */
   pricePerSqftLot: number;
+  /**
+   * How much of a lot counts. Land is not worth the same by the foot at every
+   * size: the first quarter acre of a house lot is what buyers pay for, the
+   * rest of an acre much less, and acreage beyond that hardly at all. So the
+   * first `fullUpTo` square feet count in full, the next up to `partUpTo` at
+   * `partShare`, and everything beyond at `restShare`.
+   */
+  lotTaper: { fullUpTo: number; partUpTo: number; partShare: number; restShare: number };
   perBed: number;
   perBath: number;
   perGarage: number;
@@ -47,6 +70,22 @@ export interface MarketConfig {
   monthlyAppreciation: number;
   /** Comps whose gross adjustment exceeds this fraction are discarded. */
   grossAdjustmentCap: number;
+  /**
+   * A sale whose price per square foot is below the first or above the second
+   * multiple of the median of all the sales given is left out: a transfer
+   * inside a family for a token sum, a deed that covers several lots.
+   * [low, high]. Wide enough that a street which really sells for half of
+   * what its surroundings do, or twice, keeps its own sales.
+   */
+  outlierBand: [number, number];
+  /**
+   * A sale dated in the year its house was built, at under this share of the
+   * usual price per square foot, is taken for the sale of the lot the house
+   * was then built on: the record shows the builder's purchase until the
+   * finished house sells and that sale is recorded. Null: no such rule (the
+   * demo's sales are all of finished houses).
+   */
+  lotSaleBelow: number | null;
   minComps: number;
   maxComps: number;
   /** Rehab $/sqft by starting condition: [low, likely, high]. */
@@ -71,6 +110,8 @@ export interface CompResult {
   monthsAgo: number;
   timeAdjustedPrice: number;
   adjustments: Adjustment[];
+  /** What could not be compared because the subject or the sale does not say it: "garage", "condition". */
+  notCompared: string[];
   netAdjustment: number;
   grossAdjustmentPct: number;
   adjustedPrice: number;
@@ -80,11 +121,17 @@ export interface CompResult {
 export type Confidence = "HIGH" | "MEDIUM" | "LOW";
 
 export interface CeilingResult {
-  /** 90th percentile $/sqft among renovated sales in the submarket. */
+  /** 90th percentile $/sqft among the sales in the submarket that the ceiling is drawn from. */
   pricePerSqft: number;
   /** Ceiling expressed for the subject's square footage. */
   value: number;
   sampleSize: number;
+  /**
+   * What it is drawn from: sales known to be renovated, or, where the sales
+   * do not say their condition, all of them (the top tenth of every sale is
+   * where the renovated ones are).
+   */
+  basis: "renovated" | "all";
 }
 
 export interface ArvEstimate {
@@ -100,7 +147,22 @@ export interface ArvEstimate {
   criteriaUsed: CompCriteria;
   ceiling: CeilingResult | null;
   cappedByCeiling: boolean;
+  /**
+   * A ceiling drawn from all the sales given in the house's zip code that the comps themselves sold
+   * above. The sales nearest the house are better evidence of its block than the rest are, so such a
+   * ceiling is set aside (`ceiling` is null) and kept here only to be said.
+   */
+  ceilingSetAside?: CeilingResult;
+  /** Sales that fit the search and were left out all the same, and why. */
+  leftOut: { outliers: number; overAdjusted: number; lotSales: number };
+  /** False when the comps do not say what condition they sold in, so none was adjusted for it. */
+  conditionKnown: boolean;
+  /** Why the confidence is LOW: each reason that holds. Empty when it is not LOW. */
+  lowBecause: LowReason[];
 }
+
+/** Why a value is low-confidence: fewer than five comps ("few"), comps whose prices lie far apart ("apart"), or comps that had to be looked for far away or long ago ("wide"). */
+export type LowReason = "few" | "apart" | "wide";
 
 export interface Financing {
   /** Annual interest rate, e.g. 0.11. */
@@ -128,7 +190,21 @@ export interface DealInputs {
   targetProfit: number;
 }
 
-export type Verdict = "GO" | "TIGHT" | "PASS";
+/**
+ * CHECK FIRST is not a result of the deal math. It stands in for a GO that
+ * may not be given yet (lib/engine/gate.ts): the numbers work, and something
+ * outside them is still open.
+ */
+export type Verdict = "GO" | "TIGHT" | "PASS" | "CHECK FIRST";
+
+/** Why a GO was withheld. */
+export interface GateReason {
+  code: "AREA_UNTESTED" | "LOW_CONFIDENCE";
+  /** What is open, in plain words. */
+  message: string;
+  /** What would clear it. */
+  clears: string;
+}
 
 export interface SensitivityCell {
   arvDeltaPct: number;
@@ -155,6 +231,8 @@ export interface DealResult {
   askingVsMao: number;
   sensitivity: SensitivityCell[];
   worstCaseProfit: number;
+  /** Set when the deal math said GO and the verdict shown is CHECK FIRST: the reasons a GO was withheld. */
+  withheld?: GateReason[];
 }
 
 export interface RehabRange {

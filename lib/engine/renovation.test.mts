@@ -16,7 +16,7 @@ const needs = (over: Partial<CategoryNeeds> = {}): CategoryNeeds => ({
 
 test("dated house: kitchen, baths, flooring, paint get done; untouched categories are skipped", () => {
   const plan = planRenovation({
-    subject, currentCondition: "dated", arvPoint: 1_000_000, ceiling: { pricePerSqft: 620, value: 1_140_800, sampleSize: 40 },
+    subject, currentCondition: "dated", arvPoint: 1_000_000, ceiling: { pricePerSqft: 620, value: 1_140_800, sampleSize: 40, basis: "renovated" },
     config: DEFAULT_MARKET_CONFIG,
     needs: needs({ kitchen: "replace", baths: "replace", flooring: "replace", paint: "refresh", roof: "unknown" }),
   });
@@ -55,7 +55,7 @@ test("ceiling binds: when the block will not pay, discretionary work is skipped 
   const asIs = arv / 1.12 * 0.9; // "dated" tier
   const plan = planRenovation({
     subject, currentCondition: "dated", arvPoint: arv,
-    ceiling: { pricePerSqft: 1, value: asIs + 20_000, sampleSize: 30 },
+    ceiling: { pricePerSqft: 1, value: asIs + 20_000, sampleSize: 30, basis: "renovated" },
     config: DEFAULT_MARKET_CONFIG,
     needs: needs({ kitchen: "replace", baths: "replace", flooring: "replace", exterior: "replace", windows: "replace" }),
   });

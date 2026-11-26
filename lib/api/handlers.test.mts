@@ -1,9 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createAnalyzeHandler, type AnalyzeDeps } from "./analyze.ts";
-import { createEvaluateHandler } from "./evaluate.ts";
+import { readFileSync } from "node:fs";
+import { createAnalyzeHandler, recordDiffers, type AnalyzeDeps } from "./analyze.ts";
+import { createEvaluateHandler, type EvaluateDeps } from "./evaluate.ts";
 import { InputError, readListing, readPhotos } from "./inputs.ts";
-import { getProviders } from "../data/index.ts";
+import { demoProviders } from "../data/index.ts";
+import { MemoryDataStore, type DataBudget } from "../data/budget.ts";
+import { createHouseData, type DataSource, type HouseAsk, type RentcastSettings } from "../data/house-data.ts";
+import type { Fetcher } from "../data/rentcast.ts";
+import { SUBJECT_ADDRESS, fakeRentcast, soldHomes, subjectRecord } from "../data/rentcast-fixtures.mts";
+import { DEFAULT_DEAL_TERMS } from "../engine/index.ts";
 import { DEFAULT_LIMITS, MemoryUsageStore, usageSummary, type UsageLimits, type UsageStore } from "../usage/limits.ts";
 import { PhotoReadError, tidyAssessment, type PhotoContext, type PhotoInput, type PhotoReading } from "../vision/analyze-photos.ts";
 import type { PhotoAssessment } from "../vision/schema.ts";
@@ -16,9 +22,13 @@ interface Reply {
   limit: string;
   provider: string;
   demo: boolean;
+  untested: boolean;
+  fallback: { code: string; message: string };
+  data: DataSource;
   warning: string;
   usage: { used: number; limit: number; resetsOn: string };
   report: Report;
+  plan: { totals: { costLikely: number } };
   listing: ListingInfo;
   blocked: boolean;
   subjectSources: Record<string, string>;
@@ -39,16 +49,35 @@ const ASSESSMENT: PhotoAssessment = {
 };
 
 /** A handler wired to stand-ins, and a record of what it asked of them. */
-function rig(over: { limits?: Partial<UsageLimits>; userId?: string | null; usage?: UsageStore; readPhotos?: AnalyzeDeps["readPhotos"]; fetchListing?: AnalyzeDeps["fetchListing"]; fetchPhotos?: AnalyzeDeps["fetchPhotos"] } = {}) {
+function rig(
+  over: {
+    limits?: Partial<UsageLimits>;
+    userId?: string | null;
+    usage?: UsageStore;
+    readPhotos?: AnalyzeDeps["readPhotos"];
+    fetchListing?: AnalyzeDeps["fetchListing"];
+    fetchPhotos?: AnalyzeDeps["fetchPhotos"];
+    /** RentCast as connected (a key and a budget), with `rentcastFetch` standing in for its API. Left out: not connected, the demo. */
+    rentcast?: RentcastSettings;
+    rentcastFetch?: Fetcher;
+  } = {},
+) {
   const store = new MemoryUsageStore();
-  const seen = { ai: [] as PhotoInput[][], told: [] as PhotoContext[], listings: [] as string[], photoFetches: [] as string[][] };
+  const data = new MemoryDataStore();
+  const seen = { ai: [] as PhotoInput[][], told: [] as PhotoContext[], listings: [] as string[], photoFetches: [] as string[][], houses: [] as HouseAsk[] };
   const clock = { now: new Date("2026-11-10T10:00:00.000Z"), user: over.userId === undefined ? "ann" : over.userId };
-  const deps: AnalyzeDeps = {
+  const realHouse = createHouseData({ rentcast: () => over.rentcast ?? null, store: data, now: () => clock.now, fetcher: over.rentcastFetch });
+  const house = (ask: HouseAsk) => {
+    seen.houses.push(ask);
+    return realHouse(ask);
+  };
+  const deps: AnalyzeDeps & EvaluateDeps = {
     userId: async () => clock.user,
     usage: over.usage ?? store,
     limits: () => ({ ...DEFAULT_LIMITS, ...over.limits }),
     now: () => clock.now,
-    providers: getProviders,
+    providers: demoProviders,
+    houseData: (ask) => house(ask),
     fetchListing: async (url) => {
       seen.listings.push(url);
       return over.fetchListing ? over.fetchListing(url) : { url, host: new URL(url).hostname, fetched: false, note: "blocked", photos: [] };
@@ -70,10 +99,11 @@ function rig(over: { limits?: Partial<UsageLimits>; userId?: string | null; usag
     const res = await handler(new Request("http://flip.test/api", { method: "POST", headers: { "content-type": "application/json" }, body: typeof body === "string" ? body : JSON.stringify(body) }));
     return { status: res.status, retryAfter: res.headers.get("retry-after"), body: (await res.json()) as Reply };
   };
-  return { store, seen, clock, deps, analyze: post(createAnalyzeHandler(deps)), evaluate: post(createEvaluateHandler(deps)) };
+  return { store, data, seen, clock, deps, analyze: post(createAnalyzeHandler(deps)), evaluate: post(createEvaluateHandler(deps)) };
 }
 
 const HOUSE = { photos: [{ base64: JPEG, mediaType: "image/jpeg" }], deal: { askingPrice: 640_000 } };
+const DEFAULT_TARGET = DEFAULT_DEAL_TERMS.targetProfit;
 
 /** A store whose database is down. */
 const BROKEN_STORE: UsageStore = {
@@ -148,7 +178,7 @@ test("analyze: location, id and condition cannot be set by the caller", async ()
   const r = rig();
   const res = await r.analyze({ ...HOUSE, subject: { sqft: 2_000, lat: 1, lng: 2, id: "mine", condition: "renovated", submarket: "Elsewhere" } });
   assert.equal(res.status, 200);
-  const base = await getProviders().parcels.lookup("demo");
+  const base = await demoProviders().parcels.lookup("demo");
   assert.equal(res.body.report.subject.sqft, 2_000);
   assert.equal(res.body.report.subject.lat, base!.lat);
   assert.equal(res.body.report.subject.id, base!.id);
@@ -159,7 +189,7 @@ test("analyze: location, id and condition cannot be set by the caller", async ()
 
 test("analyze: what a parser read off a page is kept when sane and left out when not, never thrown back at the person", async () => {
   const r = rig();
-  const base = await getProviders().parcels.lookup("demo");
+  const base = await demoProviders().parcels.lookup("demo");
   // A lot size mistaken for the living area, a bedroom count that is not a number.
   const odd = await r.analyze({ ...HOUSE, subject: { sqft: 87_120, beds: "three", baths: 2.5 } });
   assert.equal(odd.status, 200);
@@ -341,7 +371,7 @@ test("analyze: what the listing said is kept and comes back with the result", as
 
 test("analyze: the house's facts come from the listing where it gives them, and the result says which came from where", async () => {
   const r = rig();
-  const base = await getProviders().parcels.lookup("demo");
+  const base = await demoProviders().parcels.lookup("demo");
   const res = await r.analyze({ photos: HOUSE.photos, listing: READ_LISTING });
   const { subject } = res.body.report;
   // Size, rooms and year from the listing. Its lot and garage are kept and shown, and are not yet the valuation's to use.
@@ -615,7 +645,7 @@ test("evaluate: runs the numbers, says they are a demo, and keeps the loan defau
 
 test("evaluate: facts and sales the caller brings are not called a demo", async () => {
   const r = rig();
-  const market = getProviders();
+  const market = demoProviders();
   const subject = await market.parcels.lookup("demo");
   const sales = await market.sales.salesNear(subject!, 2.5, 18, "2026-11-10");
   const res = await r.evaluate({ subject, sales, deal: { askingPrice: 700_000 } });
@@ -643,4 +673,222 @@ test("evaluate: has its own rate limit and leaves the monthly allowance alone", 
   assert.equal(third.status, 429);
   assert.equal(third.body.limit, "window");
   assert.equal((await r.analyze(HOUSE)).status, 200);
+});
+
+// ── real sold prices (RentCast connected) ───────────────────────────────────
+
+/** RentCast as connected, answering from a stand-in that holds these records (lib/data/rentcast-fixtures.mts). */
+function withRentcast(records: Record<string, unknown>[], budget: Partial<DataBudget> = {}) {
+  const api = fakeRentcast(records);
+  const r = rig({ rentcast: { key: "test-key", baseUrl: "https://api.test/v1", budget: { requests: 45, perPerson: 30, windowDays: 31, ...budget } }, rentcastFetch: api.fetch });
+  return { ...r, api };
+}
+
+/** A listing page a person pasted for the house the fixtures are about. */
+const PASTED = { url: "", fetched: true, address: SUBJECT_ADDRESS, price: 250_000, beds: 3, baths: 2, sqft: 1_800, photos: [] as string[] };
+
+test("analyze with real sold prices: the result says UNTESTED, names where its numbers came from, and is not a GO", async () => {
+  const r = withRentcast([subjectRecord(), ...soldHomes(40)]);
+  const res = await r.analyze({ listing: PASTED, photos: HOUSE.photos });
+  assert.equal(res.status, 200);
+  assert.deepEqual([res.body.provider, res.body.demo, res.body.untested, res.body.fallback], ["rentcast", false, true, undefined]);
+  assert.match(res.body.warning, /^Real sold prices, untested estimate\./);
+
+  // At $250,000 against half-million-dollar sales the deal math says GO. It may not be given yet.
+  const { deal, arv, subject } = res.body.report;
+  assert.equal(deal.verdict, "CHECK FIRST");
+  assert.deepEqual(deal.withheld?.map((w) => w.code), ["AREA_UNTESTED"]);
+  assert.ok(deal.profit > DEFAULT_TARGET && deal.worstCaseProfit > 0, "the numbers themselves are untouched");
+  assert.match(res.body.report.narrative[0], /^VERDICT: CHECK FIRST\./);
+
+  // Built on the real record and real sales: addresses a reader can look up, no made-up condition, no made-up time drift.
+  assert.equal(arv.conditionKnown, false);
+  assert.ok(arv.comps.length >= 5 && arv.comps.every((c) => /Sample St, Fixture Falls, WA 98000$/.test(c.sale.address ?? "") && c.sale.condition === "unknown" && c.timeAdjustedPrice === c.sale.price));
+  assert.ok(arv.point > 480_000 && arv.point < 560_000, `ARV ${arv.point}`);
+  assert.deepEqual([subject.yearBuilt, subject.lotSqft, subject.garage, subject.submarket], [1984, 7_200, null, "98000"]);
+  assert.deepEqual(res.body.subjectSources, { sqft: "listing", lotSqft: "record", beds: "listing", baths: "listing", yearBuilt: "record", garage: "record" });
+  assert.equal(res.body.data.name, "RentCast");
+  assert.equal(res.body.data.record.address, SUBJECT_ADDRESS);
+  assert.deepEqual([res.body.data.search.radiusMiles, res.body.data.search.found], [1, 40]);
+  // Nothing of an owner travels to the browser.
+  assert.doesNotMatch(JSON.stringify(res.body), /Madeup|PO Box|mailing/i);
+
+  // The AI is told the real year built now; it was never told the demo's.
+  assert.deepEqual([r.seen.told[0].address, r.seen.told[0].yearBuilt, r.seen.told[0].submarket], [SUBJECT_ADDRESS, 1984, "98000"]);
+  // Two paid requests, charged to the person who asked; the run itself counted once against their month.
+  assert.deepEqual(r.data.requests.map((q) => [q.kind, q.userId, q.outcome.status]), [["property", "ann", "billed"], ["sales", "ann", "billed"]]);
+  assert.equal(res.body.usage.used, 1);
+});
+
+test("analyze with real sold prices: a deal the numbers do not carry keeps its own verdict", async () => {
+  const r = withRentcast([subjectRecord(), ...soldHomes(40)]);
+  const res = await r.analyze({ listing: { ...PASTED, price: 640_000 }, photos: HOUSE.photos });
+  assert.equal(res.body.report.deal.verdict, "PASS");
+  assert.equal(res.body.report.deal.withheld, undefined);
+  assert.equal(res.body.untested, true);
+});
+
+test("analyze: what can end a run for free is checked before a paid data request is made", async () => {
+  const r = withRentcast([subjectRecord(), ...soldHomes(40)]);
+  const noPrice = await r.analyze({ listing: { ...PASTED, price: undefined }, photos: HOUSE.photos });
+  assert.equal(noPrice.status, 400);
+  assert.match(noPrice.body.error, /Enter the asking price/);
+  const noPhotos = await r.analyze({ listing: PASTED });
+  assert.equal(noPhotos.status, 400);
+  assert.equal(r.seen.houses.length, 0);
+  assert.equal(r.api.calls.length, 0);
+  assert.equal(r.data.requests.length, 0);
+});
+
+test("analyze: when real sold prices cannot be had for a house, it gets the demo's and is told why first", async () => {
+  const r = withRentcast([subjectRecord(), ...soldHomes(40)], { requests: 2 });
+  // An address the records do not have.
+  const unknown = await r.analyze({ listing: { ...PASTED, address: "9 Nowhere Rd, Fixture Falls, WA 98000" }, photos: HOUSE.photos });
+  assert.equal(unknown.status, 200);
+  assert.deepEqual([unknown.body.provider, unknown.body.demo, unknown.body.untested, unknown.body.fallback.code, unknown.body.data], ["synthetic", true, false, "not-found", undefined]);
+  assert.match(unknown.body.warning, /^The public records flip reads \(through RentCast\) have no property at 9 Nowhere Rd, Fixture Falls, WA 98000\. Check the address on the listing; a home in a building needs its unit number\. Demo numbers\./);
+  // A demo is a demo: its verdict is the deal math's, marked DEMO by whoever shows it, and no real fact is claimed.
+  assert.ok(["GO", "TIGHT", "PASS"].includes(unknown.body.report.deal.verdict));
+  assert.equal(r.seen.told[0].yearBuilt, undefined);
+
+  // No address at all (photos dragged in, a price typed).
+  const bare = await r.analyze(HOUSE);
+  assert.deepEqual([bare.body.demo, bare.body.fallback.code], [true, "no-address"]);
+
+  // The budget: one house goes through on it, the next finds it used up.
+  assert.equal((await r.analyze({ listing: PASTED, photos: HOUSE.photos })).body.demo, false);
+  const late = await r.analyze({ listing: { ...PASTED, address: "101 Sample St, Fixture Falls, WA 98000" }, photos: HOUSE.photos });
+  assert.deepEqual([late.status, late.body.demo, late.body.fallback.code], [200, true, "budget"]);
+  assert.match(late.body.warning, /^flip's real sold-price lookups are used up for now; more open up on December 11\. Demo numbers\./);
+  assert.equal(r.data.requests.filter((q) => q.outcome.status !== "free").length, 2, "nothing was spent past the budget");
+});
+
+test("analyze with real sold prices: a house nothing can be compared with ends before the AI, for free, and says so plainly", async () => {
+  // Two sold homes are a value of sorts: given, marked low-confidence, and for two reasons not a GO.
+  const few = withRentcast([subjectRecord(), ...soldHomes(2)]);
+  const thin = await few.analyze({ listing: PASTED, photos: HOUSE.photos });
+  assert.equal(thin.status, 200);
+  assert.deepEqual([thin.body.report.arv.comps.length, thin.body.report.arv.confidence, thin.body.report.deal.verdict], [2, "LOW", "CHECK FIRST"]);
+  assert.deepEqual(thin.body.report.deal.withheld?.map((w) => w.code), ["AREA_UNTESTED", "LOW_CONFIDENCE"]);
+  assert.ok(thin.body.report.riskFlags.some((f) => f.code === "LOW_CONFIDENCE"));
+
+  // None at all is no value.
+  const r = withRentcast([subjectRecord()]);
+  const res = await r.analyze({ listing: PASTED, photos: HOUSE.photos });
+  assert.equal(res.status, 422);
+  assert.equal(res.body.error, "No sold home that can be compared with this one was found in the public records as read on November 10: none of similar size within 5 miles in the last 24 months. The photos were not read, and this run does not count against your month.");
+  assert.equal(r.seen.ai.length, 0);
+  assert.deepEqual(r.store.runs.map((x) => x.outcome.status), ["free"]);
+});
+
+test("analyze with real sold prices: what the person is told matches how far the search really went", async () => {
+  // Sold homes by the hundred, none of which can be compared with a house the caller says has thirty bedrooms:
+  // the search stops at what one house may cost, two and a half miles out, and says so. It does not say "5 miles",
+  // and it does not say that none of similar size sold: hundreds did, and that is what the person is told.
+  const dense = withRentcast([subjectRecord(), ...soldHomes(700, { fromMiles: 0, withinMiles: 1 })]);
+  const cut = await dense.analyze({ listing: PASTED, photos: HOUSE.photos, subject: { beds: 30, baths: 30 } });
+  assert.equal(cut.status, 422);
+  assert.match(cut.body.error, /^No sold home that can be compared with this one was found in the public records as read on November 10: \d{3} of similar size sold within 2\.5 miles in the last 18 months \(and more than could be read\), but none is close enough to this house, once what differs between them is counted, to price it from, and the search could not be taken further this time\. The photos were not read, and this run does not count against your month\.$/);
+  assert.doesNotMatch(cut.body.error, /none of similar size/);
+  assert.equal(dense.data.requests.filter((q) => q.outcome.status !== "free").length, 5, "one house, five requests at the most");
+  assert.equal(dense.seen.ai.length, 0);
+
+  // Thirty homes with this house's own rooms, lot and year, each two thirds of its size and under half its price:
+  // what leaves them out is the adjustment for size. No reason is given that is not known to be the reason.
+  const smaller = withRentcast([subjectRecord(), ...soldHomes(30, { made: { squareFootage: 1_300, soldFor: 200_000 } })]);
+  const sized = await smaller.analyze({ listing: PASTED, photos: HOUSE.photos });
+  assert.equal(sized.status, 422);
+  assert.match(sized.body.error, /: 30 of similar size sold within 5 miles in the last 24 months, but none is close enough to this house, once what differs between them is counted, to price it from\. The photos/);
+  assert.doesNotMatch(sized.body.error, /rooms|lot and age/);
+
+  // Six homes sold around it and the records give the day and no price: that is said, not that none sold.
+  const unpriced = withRentcast([subjectRecord(), ...soldHomes(6, { made: { soldFor: 0 } })]);
+  const noPrice = await unpriced.analyze({ listing: PASTED, photos: HOUSE.photos });
+  assert.equal(noPrice.status, 422);
+  assert.equal(noPrice.body.error, "No sold home that can be compared with this one was found in the public records as read on November 10: 6 of similar size sold within 5 miles in the last 24 months, and none of them has a sale price on record that can be used. The photos were not read, and this run does not count against your month.");
+
+  // The engine is handed how far the search went, and widens no further and no less. A house in the country, whose
+  // sold homes are two to four and a half miles out and up to two years back, is valued from them (the demo's own
+  // four steps stop at two and a half miles and would find too few); one whose search the budget cut short at two
+  // and a half miles is never said to have comps "within 5 miles".
+  const far = [subjectRecord(), ...soldHomes(2), ...soldHomes(20, { start: 100, fromMiles: 2, withinMiles: 4.5, withinDays: 700, fromDays: 200 })];
+  const country = await withRentcast(far).analyze({ listing: PASTED, photos: HOUSE.photos });
+  assert.equal(country.status, 200);
+  assert.deepEqual([country.body.report.arv.criteriaUsed.radiusMiles, country.body.report.arv.criteriaUsed.months, country.body.report.arv.comps.length >= 5], [5, 24, true]);
+  const shortOf = await withRentcast(far, { requests: 3 }).analyze({ listing: PASTED, photos: HOUSE.photos });
+  assert.equal(shortOf.status, 200);
+  assert.deepEqual([shortOf.body.data.search.radiusMiles, shortOf.body.data.search.stoppedEarly, shortOf.body.report.arv.criteriaUsed.radiusMiles], [2.5, true, 2.5]);
+  assert.ok(![...shortOf.body.report.narrative, ...shortOf.body.report.riskFlags.map((f: { message: string }) => f.message)].some((line: string) => /5 miles|5 mi \//.test(line.replace(/2\.5 mi/g, ""))));
+  // All three places that value the house are handed it: the check before the AI, the valuation the plan is built
+  // on, and the report. With sold homes only three to four and a half miles out, any one of them left to the demo's
+  // steps (which stop at two and a half miles) would find nothing to compare, and the run would end in "no comps".
+  const onlyFar = await withRentcast([subjectRecord(), ...soldHomes(20, { start: 100, fromMiles: 3, withinMiles: 4.5, withinDays: 700, fromDays: 200 })]).analyze({ listing: PASTED, photos: HOUSE.photos });
+  assert.equal(onlyFar.status, 200, JSON.stringify(onlyFar.body.error));
+  assert.deepEqual([onlyFar.body.report.arv.criteriaUsed.radiusMiles, onlyFar.body.report.arv.comps.length >= 5, Number.isFinite(onlyFar.body.plan.totals.costLikely), onlyFar.body.report.arv.comps.every((c) => c.distanceMiles > 2.5)], [5, true, true, true]);
+
+  // The lookups run out after the first mile found nothing to compare: the person is told the lookups ran out,
+  // and gets the demo, marked as one. Not "nothing sold within 5 miles".
+  const oddHomes = soldHomes(2, { made: { bedrooms: 30, bathrooms: 30 } });
+  const short = withRentcast([subjectRecord(), ...oddHomes], { requests: 2 });
+  const out = await short.analyze({ listing: PASTED, photos: HOUSE.photos });
+  assert.deepEqual([out.status, out.body.demo, out.body.fallback.code], [200, true, "budget"]);
+  assert.match(out.body.warning, /^flip's real sold-price lookups are used up for now/);
+
+  // And when not even the demo can value the house as described, the reason real prices were not had is still said.
+  const neither = withRentcast([subjectRecord(), ...soldHomes(2)], { requests: 2 });
+  const none = await neither.analyze({ listing: PASTED, photos: HOUSE.photos, subject: { beds: 30, baths: 30 } });
+  assert.equal(none.status, 422);
+  assert.match(none.body.error, /^flip's real sold-price lookups are used up for now; more open up on December 11\. No usable comps for this property\.$/);
+});
+
+test("analyze with real sold prices: where the listing and the public record disagree, the result says so", async () => {
+  const r = withRentcast([subjectRecord(), ...soldHomes(40), ...soldHomes(30, { start: 200, made: { squareFootage: 2_300 } })]);
+  const res = await r.analyze({ listing: { ...PASTED, sqft: 2_340, beds: 4, baths: 2.5, facts: { yearBuilt: { value: 1990, source: "text" } } }, photos: HOUSE.photos });
+  assert.equal(res.status, 200);
+  // The valuation goes by the listing: it is what is for sale.
+  assert.deepEqual([res.body.report.subject.sqft, res.body.report.subject.beds, res.body.report.subject.yearBuilt], [2_340, 4, 1990]);
+  const flag = res.body.report.riskFlags.find((f) => f.code === "RECORD_DIFFERS");
+  assert.ok(flag);
+  assert.equal(flag.basis, "record");
+  assert.match(flag.message, /living area 2,340 sqft on the listing, 1,800 on record; 4 bedrooms on the listing, 3 on record; built 1990 on the listing, 1984 on record\./);
+  // Half a bath is how sites count, not a difference.
+  assert.doesNotMatch(flag.message, /bathrooms/);
+  assert.match(flag.message, /without a permit/);
+});
+
+test("recordDiffers: only real differences, only where both sides speak", () => {
+  const recorded = { sqft: 1_800, lotSqft: 7_200, beds: 3, baths: 2, yearBuilt: 1984, garage: null };
+  assert.deepEqual(recordDiffers(recorded, { sqft: 1_850, beds: 3, baths: 2.5, yearBuilt: 1985 }), []);
+  assert.deepEqual(recordDiffers(recorded, {}), []);
+  assert.deepEqual(recordDiffers({ ...recorded, sqft: null, beds: null }, { sqft: 2_400, beds: 5 }), []);
+  assert.match(recordDiffers(recorded, { baths: 3 })[0].message, /3 bathrooms on the listing, 2 on record/);
+  assert.match(recordDiffers(recorded, { sqft: 1_500 })[0].message, /living area 1,500 sqft on the listing, 1,800 on record/);
+});
+
+test("the numbers-only route and Quick Numbers have no way to a paid data request", async () => {
+  // They are wired to the demo's house and nothing else. This is a tripwire for the day somebody wires
+  // them to the data layer: neither takes an address, and neither is held to a monthly allowance. It reads
+  // what they import, and what the module they get the demo from imports in its turn.
+  const PAID = /from\s+["'][^"']*(?:house-data|rentcast|prisma-data-store|budget|address-match)(?:\.ts)?["']/;
+  for (const file of ["lib/api/evaluate.ts", "app/api/v1/evaluate/route.ts", "app/app/quick/page.tsx", "components/evaluator.tsx", "lib/data/index.ts", "lib/data/synthetic-provider.ts", "lib/data/demo.ts", "lib/data/provider.ts"]) {
+    const source = readFileSync(new URL(`../../${file}`, import.meta.url), "utf8");
+    assert.doesNotMatch(source, PAID, `${file} reaches for the data provider`);
+  }
+  // (The tripwire itself trips on the file that does reach for it.)
+  assert.match(readFileSync(new URL("../../app/api/v1/analyze/route.ts", import.meta.url), "utf8"), PAID);
+  const r = withRentcast([subjectRecord(), ...soldHomes(40)]);
+  const res = await r.evaluate({ address: SUBJECT_ADDRESS, deal: { askingPrice: 700_000 } });
+  assert.equal(res.status, 200);
+  assert.deepEqual([res.body.provider, res.body.demo], ["synthetic", true]);
+  assert.equal(r.api.calls.length, 0);
+});
+
+test("the demo does not age: the same house gets the same demo result whatever day it is asked", async () => {
+  const r = rig();
+  const first = await r.analyze(HOUSE);
+  r.clock.now = new Date("2028-06-01T10:00:00.000Z");
+  const later = await r.analyze(HOUSE);
+  assert.equal(later.status, 200);
+  assert.deepEqual([later.body.report.arv.point, later.body.report.arv.comps.length, later.body.report.deal.verdict], [first.body.report.arv.point, first.body.report.arv.comps.length, first.body.report.deal.verdict]);
+  assert.ok(!later.body.report.riskFlags.some((f) => f.code === "STALE_SALES"));
 });

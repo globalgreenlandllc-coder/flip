@@ -39,7 +39,7 @@ export function RemodelPlan() {
     currentCondition: "dated",
     needs: NEEDS,
     arvPoint: COMP_ARV,
-    ceiling: { pricePerSqft: ceiling / SUBJECT.sqft, value: ceiling, sampleSize: 43 },
+    ceiling: { pricePerSqft: ceiling / SUBJECT.sqft, value: ceiling, sampleSize: 43, basis: "renovated" },
     config: DEFAULT_MARKET_CONFIG,
   });
   const work = plan.items.filter((i) => i.action !== "skip");

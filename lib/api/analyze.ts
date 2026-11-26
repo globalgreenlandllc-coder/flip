@@ -1,8 +1,10 @@
-import { DEFAULT_DEAL_TERMS, DEFAULT_MARKET_CONFIG, estimateArv, evaluate } from "@/lib/engine";
+import { DEFAULT_DEAL_TERMS, estimateArv, evaluate, withGate } from "@/lib/engine";
 import type { PropertyFacts, RiskFlag } from "@/lib/engine";
 import { planRenovation } from "@/lib/engine/renovation";
-import { DEMO_WARNING, isDemoProvider, type Providers } from "@/lib/data";
-import type { ListingInfo } from "@/lib/listing/fetch-listing";
+import { AREA_TIME_ZONE } from "@/lib/area";
+import { DEMO_WARNING, UNTESTED_WARNING } from "@/lib/data/demo";
+import type { HouseAsk, HouseData, RecordedFacts } from "@/lib/data/house-data";
+import { addressFromUrl, type ListingInfo } from "@/lib/listing/fetch-listing";
 import { pageAddress, sameAddress, sameLink } from "@/lib/listing/house";
 import { addressForBlocked, type ResolvedListing } from "@/lib/listing/resolve";
 import { mergeListings, sourcesOf, subjectFromListing } from "@/lib/listing/subject";
@@ -27,16 +29,20 @@ import { InputError, mergeDeal, readAsOf, readDeal, readFactOverrides, readListi
  *   asOf?: string                        YYYY-MM-DD
  *
  * Order: who is asking -> is the request well-formed -> may they run one more
- * (lib/usage) -> listing -> photos -> are there comps at all -> Claude vision ->
- * ARV + ceiling -> renovation plan ranked by profit -> deal math with the
- * plan's cost. Everything that can end the run for free comes before the AI.
+ * (lib/usage) -> listing -> photos -> asking price -> the house's record and
+ * the sold homes around it (lib/data/house-data.ts: real when a provider is
+ * connected, the demo's otherwise) -> are there comps at all -> Claude vision
+ * -> ARV + ceiling -> renovation plan ranked by profit -> deal math with the
+ * plan's cost -> may it be a GO (lib/engine/gate.ts). Everything that can end
+ * the run for free comes before the paid data, and that before the AI.
  */
 export interface AnalyzeDeps {
   userId: () => Promise<string | null>;
   usage: UsageStore;
   limits: () => UsageLimits;
   now: () => Date;
-  providers: () => Providers;
+  /** The house's public record and the sold homes around it: real when a data provider is connected, the demo's otherwise. */
+  houseData: (ask: HouseAsk) => Promise<HouseData>;
   fetchListing: (url: string) => Promise<ListingInfo>;
   resolveByAddress: (address: string, blockedHost: string) => Promise<ResolvedListing | null>;
   fetchPhotos: (urls: string[]) => Promise<{ photos: PhotoInput[]; failed: string[] }>;
@@ -83,9 +89,42 @@ function readInput(body: Record<string, unknown>, now: Date): AnalyzeInput {
   };
 }
 
+/**
+ * Where the listing and the public record say different things about the
+ * house, as one risk flag. The listing's numbers are the ones the valuation
+ * uses (it is what is for sale); the difference is the news. Living area a
+ * tenth apart, a bedroom or a whole bathroom apart (sites count half baths
+ * differently), years more than two apart.
+ */
+export function recordDiffers(recorded: RecordedFacts, listing: Partial<Record<"sqft" | "beds" | "baths" | "yearBuilt", number | null>>): RiskFlag[] {
+  const n = (v: number) => v.toLocaleString("en-US");
+  const apart: string[] = [];
+  const both = (key: "sqft" | "beds" | "baths" | "yearBuilt"): [number, number] | null => {
+    const said = listing[key];
+    const onRecord = recorded[key];
+    return typeof said === "number" && typeof onRecord === "number" ? [said, onRecord] : null;
+  };
+  const sqft = both("sqft");
+  if (sqft && Math.abs(sqft[0] - sqft[1]) / Math.max(sqft[0], sqft[1]) > 0.1) apart.push(`living area ${n(sqft[0])} sqft on the listing, ${n(sqft[1])} on record`);
+  const beds = both("beds");
+  if (beds && beds[0] !== beds[1]) apart.push(`${beds[0]} bedrooms on the listing, ${beds[1]} on record`);
+  const baths = both("baths");
+  if (baths && Math.abs(baths[0] - baths[1]) >= 1) apart.push(`${baths[0]} bathrooms on the listing, ${baths[1]} on record`);
+  const year = both("yearBuilt");
+  if (year && Math.abs(year[0] - year[1]) > 2) apart.push(`built ${year[0]} on the listing, ${year[1]} on record`);
+  if (apart.length === 0) return [];
+  return [
+    {
+      code: "RECORD_DIFFERS",
+      message: `The listing and the public record disagree: ${apart.join("; ")}. The numbers here use the listing's. Find out why before offering: space or rooms the county has no record of are often work done without a permit, and a buyer's appraiser goes by the record.`,
+      basis: "record",
+    },
+  ];
+}
+
 export function createAnalyzeHandler(deps: AnalyzeDeps) {
   /** The analysis itself. `outcome` is filled in as it goes so the run is recorded truthfully however it ends. */
-  async function analyze(input: AnalyzeInput, outcome: RunOutcome, usage: UsageSummary): Promise<Response> {
+  async function analyze(input: AnalyzeInput, outcome: RunOutcome, usage: UsageSummary, userId: string): Promise<Response> {
     // What the person's browser read of the listing, if it read it. The server reads the link
     // itself only for what is still missing: when there is no such reading, or it came without
     // photos and none were sent beside it.
@@ -140,39 +179,62 @@ export function createAnalyzeHandler(deps: AnalyzeDeps) {
       return json({ error, listing, blocked: Boolean(blockedHost) }, 400);
     }
 
-    const providers = deps.providers();
     const asOf = input.asOf ?? deps.now().toISOString().slice(0, 10);
-    const base = await providers.parcels.lookup(listing?.address ?? "demo");
-    if (!base) return json({ error: "Could not resolve the property." }, 400);
 
-    // The house's facts: the provider's record, corrected by what the listing says, corrected by
-    // what the caller sent. Where each one came from is kept and sent back with the result.
-    const fromListing = subjectFromListing(listing);
-    const facts: PropertyFacts = { ...base, ...fromListing, ...input.facts };
-    const subjectSources = sourcesOf(input.facts, fromListing);
-
+    // The asking price, before anything is asked of a paid data provider: a run that cannot go on ends here for free.
     const askingPrice = input.deal.askingPrice ?? listing?.price;
     if (typeof askingPrice !== "number" || !(askingPrice > 0)) {
       console.warn("[analyze] 400 no asking price", { host: listing?.host, fetched: listing?.fetched });
       return json({ error: listing ? "The listing did not give up its price. Enter the asking price and run it again." : "Enter the asking price.", listing }, 400);
     }
 
+    // The house's facts: the provider's record, corrected by what the listing says, corrected by
+    // what the caller sent. Where each one came from is kept and sent back with the result.
+    const fromListing = subjectFromListing(listing);
+    const address = listing?.address ?? addressFromUrl(listing?.url || input.listingUrl || "");
+    const data = await deps.houseData({ address, overrides: { ...fromListing, ...input.facts }, userId, asOf });
+    const { facts, demo } = data;
+    const subjectSources = sourcesOf(input.facts, fromListing);
+
     // Are there sold homes to compare with at all? Asked before the AI is: a house nothing can
     // be compared to ends here, for free, and not after its photos were paid for. The answer
     // does not depend on the condition the photos will show (the value is of the house as
     // renovated), so it is the same question the full run asks later.
-    const sales = await providers.sales.salesNear(facts, 2.5, 18, asOf);
-    if (Number.isNaN(estimateArv(facts, sales, asOf, DEFAULT_MARKET_CONFIG).point)) {
-      console.warn("[analyze] 422 no usable comps", { host: listing?.host, sales: sales.length });
-      return json({ error: "No usable comps for this property.", listing }, 422);
+    if (Number.isNaN(estimateArv(facts, data.sales, asOf, data.config, { tiers: data.tiers }).point)) {
+      console.warn("[analyze] 422 no usable comps", { host: listing?.host, provider: data.provider, sales: data.sales.length });
+      // Said by how far the search really went, which is not always as far as it can go, and by what it found.
+      // "None sold", "some sold and none has a price on record" and "plenty sold, none like this house" are three
+      // different things to be told. Why none is like it is not said: the engine left them out for what they would
+      // have to be adjusted by in all, and no one thing (rooms, lot, size) is known to be the reason.
+      const went = data.source?.search;
+      const span = went ? `within ${went.radiusMiles} mile${went.radiusMiles === 1 ? "" : "s"} in the last ${went.months} months` : "";
+      const further = went?.stoppedEarly ? ", and the search could not be taken further this time" : "";
+      const more = went?.sampled ? " (and more than could be read)" : "";
+      const count = (n: number) => n.toLocaleString("en-US");
+      const found = !went
+        ? ""
+        : went.found === 0
+          ? `none of similar size ${span}${further}`
+          : went.usable === 0
+            ? `${count(went.found)} of similar size sold ${span}${more}, and none of them has a sale price on record that can be used${further}`
+            : `${count(went.usable)} of similar size sold ${span}${more}, but none is close enough to this house, once what differs between them is counted, to price it from${further}`;
+      // And by when: the answers may have been kept for up to a week, and "none sold" is true of the records as
+      // they stood on the day they were read.
+      const readOn = went ? new Date(went.readAt).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: AREA_TIME_ZONE }) : "";
+      const error =
+        demo || !went
+          ? // A demo that stood in for real data says why it did, here too.
+            [data.fallback?.message, "No usable comps for this property."].filter(Boolean).join(" ")
+          : `No sold home that can be compared with this one was found in the public records as read on ${readOn}: ${found}. The photos were not read, and this run does not count against your month.`;
+      return json({ error, listing, provider: data.provider }, 422);
     }
 
     // What the AI is told about the house. While the property record is made up, only what the
     // listing or the caller gave is passed on: a made-up year or neighbourhood must not colour
     // the one part of the result that is real.
-    const demo = isDemoProvider(providers.name);
-    const real = <K extends "sqft" | "beds" | "baths" | "yearBuilt">(key: K) => (demo && subjectSources[key] === "record" ? undefined : facts[key]);
-    const known: PhotoContext = { address: listing?.address, sqft: real("sqft"), beds: real("beds"), baths: real("baths"), yearBuilt: real("yearBuilt"), submarket: demo ? undefined : facts.submarket };
+    const real = <K extends "sqft" | "beds" | "baths" | "yearBuilt">(key: K) => (demo && subjectSources[key] === "record" ? undefined : (facts[key] ?? undefined));
+    // (The area is passed on only when it is a real zip code: a record without one has a stand-in there.)
+    const known: PhotoContext = { address: listing?.address, sqft: real("sqft"), beds: real("beds"), baths: real("baths"), yearBuilt: real("yearBuilt"), submarket: !demo && /^\d{5}$/.test(facts.submarket) ? facts.submarket : undefined };
 
     // From here the AI is asked, so the run counts against the month unless the AI never answered.
     outcome.status = "failed";
@@ -192,7 +254,7 @@ export function createAnalyzeHandler(deps: AnalyzeDeps) {
     const { assessment } = reading;
 
     const subject: PropertyFacts = { ...facts, condition: assessment.overallCondition };
-    const arv = estimateArv(subject, sales, asOf, DEFAULT_MARKET_CONFIG);
+    const arv = estimateArv(subject, data.sales, asOf, data.config, { tiers: data.tiers });
     if (Number.isNaN(arv.point)) return json({ error: "No usable comps for this property.", listing, assessment }, 422);
 
     const plan = planRenovation({
@@ -206,10 +268,12 @@ export function createAnalyzeHandler(deps: AnalyzeDeps) {
       // would not come back.
       arvPoint: arv.compBased,
       ceiling: arv.ceiling,
-      config: DEFAULT_MARKET_CONFIG,
+      config: data.config,
     });
 
-    const report = evaluate({ subject, sales, asOf, config: DEFAULT_MARKET_CONFIG, deal: { ...mergeDeal(DEFAULT_DEAL_TERMS, input.deal), askingPrice, rehab: plan.rehab.likely } });
+    const worked = evaluate({ subject, sales: data.sales, asOf, config: data.config, tiers: data.tiers, deal: { ...mergeDeal(DEFAULT_DEAL_TERMS, input.deal), askingPrice, rehab: plan.rehab.likely } });
+    // Real sold prices, and a method no area has been accuracy-tested with yet: the numbers may work, a GO may not be given.
+    const report = demo ? worked : withGate(worked, { areaTested: false });
 
     const photoFlags: RiskFlag[] = [
       ...assessment.redFlags.map((m) => ({ code: "PHOTO_RED_FLAG", message: m, basis: "photos" as const })),
@@ -218,14 +282,21 @@ export function createAnalyzeHandler(deps: AnalyzeDeps) {
     // The age flags follow the year built, wherever that came from (the listing, the caller,
     // the property record); the rest follow the sales.
     const fromAge = subjectSources.yearBuilt;
-    report.riskFlags = [...photoFlags, ...report.riskFlags.map((f) => ({ ...f, basis: f.code === "PRE_1978" || f.code === "OLD_SYSTEMS" ? fromAge : ("sales" as const) }))];
+    const differs = demo ? [] : recordDiffers(data.recorded, fromListing);
+    report.riskFlags = [
+      ...photoFlags,
+      ...differs,
+      ...report.riskFlags.map((f) => ({ ...f, basis: f.code === "PRE_1978" || f.code === "OLD_SYSTEMS" ? fromAge : f.code === "YEAR_UNKNOWN" ? ("record" as const) : ("sales" as const) })),
+    ];
     report.narrative.splice(1, 0,
       `Photos: ${assessment.summary}`,
       `Renovation: $${Math.round(plan.totals.costLikely).toLocaleString("en-US")} likely (${Math.round(plan.totals.costLow).toLocaleString("en-US")} to ${Math.round(plan.totals.costHigh).toLocaleString("en-US")}) adds about $${Math.round(plan.totals.valueAdded).toLocaleString("en-US")}. ${plan.finishAdvice}`,
     );
 
     outcome.status = "ok";
-    return json({ provider: providers.name, demo, warning: demo ? DEMO_WARNING.analysis : undefined, listing, subjectSources, photosUsed, assessment, plan, report, usage });
+    // A demo that stands in for real data says why first; a real result says what it is not yet.
+    const warning = demo ? [data.fallback?.message, DEMO_WARNING.analysis].filter(Boolean).join(" ") : UNTESTED_WARNING.analysis;
+    return json({ provider: data.provider, demo, untested: !demo, fallback: data.fallback, data: data.source, warning, listing, subjectSources, photosUsed, assessment, plan, report, usage });
   }
 
   return async function POST(req: Request): Promise<Response> {
@@ -263,7 +334,7 @@ export function createAnalyzeHandler(deps: AnalyzeDeps) {
 
     const outcome: RunOutcome = { status: "free" };
     try {
-      return await analyze(input, outcome, gate.usage);
+      return await analyze(input, outcome, gate.usage, userId);
     } catch (err) {
       console.error("[analyze] failed", err);
       return json({ error: "The analysis failed on our side. Try again in a minute." }, 500);

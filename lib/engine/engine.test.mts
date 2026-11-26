@@ -52,11 +52,11 @@ test("ARV recovers the synthetic truth within 8%", () => {
   const arv = estimateArv(subject, sales, ASOF, DEFAULT_MARKET_CONFIG);
   const expectedRenovated =
     truth.basePpsf[subject.submarket] * subject.sqft * 1.12 +
-    (subject.beds - 3) * 8_000 +
-    (subject.baths - 2) * 12_000 +
-    subject.garage * 10_000 +
-    (subject.yearBuilt - 1970) * 500 +
-    (subject.lotSqft - 5000) * 4;
+    (subject.beds! - 3) * 8_000 +
+    (subject.baths! - 2) * 12_000 +
+    subject.garage! * 10_000 +
+    (subject.yearBuilt! - 1970) * 500 +
+    (subject.lotSqft! - 5000) * 4;
   const err = Math.abs(arv.point - expectedRenovated) / expectedRenovated;
   assert.ok(err < 0.08, `ARV ${arv.point} vs truth ${expectedRenovated} (err ${(err * 100).toFixed(1)}%)`);
   assert.ok(arv.low <= arv.point && arv.point <= arv.high);
@@ -74,9 +74,9 @@ test("ceiling caps the comp-based ARV and flags it", () => {
   // Eight identical renovated comps at $600k. The subject is the same size
   // but has an extra bed, an extra bath, two garage spaces and is 40 years
   // newer, so every comp adjusts UP past what the block has ever cleared.
-  const base: Omit<Sale, "id" | "saleDate"> = {
+  const base = {
     lat: 47.68, lng: -122.36, submarket: "X", sqft: 1800, lotSqft: 5000,
-    beds: 3, baths: 2, yearBuilt: 1950, garage: 0, condition: "renovated", price: 600_000,
+    beds: 3, baths: 2, yearBuilt: 1950, garage: 0, condition: "renovated" as const, price: 600_000,
   };
   const sales: Sale[] = Array.from({ length: 8 }, (_, i) => ({
     ...base,
