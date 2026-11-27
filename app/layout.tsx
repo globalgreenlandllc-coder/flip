@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { ClerkProvider } from "@clerk/nextjs";
+import { VisitBeacon } from "@/components/visit-beacon";
 import "./globals.css";
 
 // Plus Jakarta Sans, kept with the app (SIL Open Font License, app/fonts/OFL.txt): nothing is fetched to build or show it.
@@ -56,6 +57,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           }}
         >
           {children}
+          <VisitBeacon />
         </ClerkProvider>
       </body>
     </html>

@@ -7,11 +7,9 @@ import type { Heat } from "@/lib/engine/screen";
 import { browserNotes, noteFullAnalysis } from "@/lib/finder/hand-off";
 import { analyzeHref, money, zillowHref, type MapHome } from "./shared";
 
-/** Where the map's background comes from. Null: no background, the pins alone (the local stand, which reaches no one). */
-export interface MapTiles {
-  url: string;
-  attribution: string;
-}
+import type { MapTiles } from "@/lib/map-tiles";
+
+export type { MapTiles };
 
 /** Hot pins stand out: bigger, and in the color of the profit reached. */
 const PIN: Record<Heat, { radius: number; color: string; fill: string; fillOpacity: number; weight: number }> = {

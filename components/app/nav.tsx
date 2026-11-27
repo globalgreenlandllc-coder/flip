@@ -22,6 +22,8 @@ export const WORKSPACE: Item[] = [
   { href: "/app/quick", label: "Quick numbers", icon: "calculator" },
 ];
 export const TOOLS: Item[] = [{ href: "/app/extension", label: "Browser button", icon: "puzzle" }];
+/** Shown only to an admin (lib/admin/access.ts). */
+export const ADMIN: Item[] = [{ href: "/app/admin", label: "Admin", icon: "chart" }];
 
 const isActive = (item: Item, pathname: string) =>
   item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`) || (item.also ?? []).some((a) => pathname.startsWith(a));
@@ -29,7 +31,7 @@ const isActive = (item: Item, pathname: string) =>
 /** What the top bar calls the page you are on. */
 export function pageName(pathname: string): string {
   if (/^\/app\/deals\/[^/]+$/.test(pathname)) return "Deal";
-  const item = [...WORKSPACE, ...TOOLS].find((i) => isActive(i, pathname));
+  const item = [...WORKSPACE, ...TOOLS, ...ADMIN].find((i) => isActive(i, pathname));
   return item?.label ?? "Workspace";
 }
 
@@ -62,8 +64,8 @@ function NavList({ items, pathname, dealCount, onNavigate }: { items: Item[]; pa
   );
 }
 
-/** The sidebar's two lists: the workspace, then the tools. */
-export function AppNav({ dealCount, onNavigate }: { dealCount?: number; onNavigate?: () => void }) {
+/** The sidebar's lists: the workspace, then the tools, and for an admin the admin page. */
+export function AppNav({ dealCount, admin = false, onNavigate }: { dealCount?: number; admin?: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
   return (
     <nav aria-label="Workspace" className="flex flex-col">
@@ -71,6 +73,12 @@ export function AppNav({ dealCount, onNavigate }: { dealCount?: number; onNaviga
       <NavList items={WORKSPACE} pathname={pathname} dealCount={dealCount} onNavigate={onNavigate} />
       <p className="eyebrow mx-3.5 mb-3 mt-7 text-[11px] text-ink-400">Tools</p>
       <NavList items={TOOLS} pathname={pathname} onNavigate={onNavigate} />
+      {admin && (
+        <>
+          <p className="eyebrow mx-3.5 mb-3 mt-7 text-[11px] text-ink-400">Owner</p>
+          <NavList items={ADMIN} pathname={pathname} onNavigate={onNavigate} />
+        </>
+      )}
     </nav>
   );
 }
