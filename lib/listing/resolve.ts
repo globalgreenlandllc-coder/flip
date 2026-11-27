@@ -36,7 +36,10 @@ export interface ResolvedListing extends ListingInfo {
   readFrom: { host: string; url: string; reason: string };
 }
 
-/** Try the alternates; the first page with photos for the same zip wins. */
+/**
+ * Try the alternates; the first page with photos for the same zip wins. Its address is the page's own, or none when
+ * the page does not say it: what an address the page does not give means is the caller's to decide.
+ */
 export async function resolveByAddress(address: string, blockedHost: string): Promise<ResolvedListing | null> {
   const zip = address.match(/(\d{5})\s*$/)?.[1];
   for (const url of estatelyCandidates(address)) {
@@ -45,7 +48,6 @@ export async function resolveByAddress(address: string, blockedHost: string): Pr
     if (zip && !(info.title ?? "").includes(zip) && !(info.address ?? "").includes(zip)) continue;
     return {
       ...info,
-      address: info.address ?? address,
       readFrom: { host: "estately.com", url, reason: `${blockedHost} blocked the server, so the same MLS listing was read from Estately.` },
     };
   }

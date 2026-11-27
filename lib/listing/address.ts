@@ -31,6 +31,45 @@ export function sameAddress(a: string | undefined, b: string | undefined): Same 
   return first.street === second.street ? "same" : "unknown";
 }
 
+const DIRECTION_WORDS = new Map(Object.entries({ n: "n", s: "s", e: "e", w: "w", ne: "ne", nw: "nw", se: "se", sw: "sw", north: "n", south: "s", east: "e", west: "w", northeast: "ne", northwest: "nw", southeast: "se", southwest: "sw" }));
+const STREET_TYPES = new Map(Object.entries({
+  st: "st", street: "st", ave: "ave", av: "ave", avenue: "ave", rd: "rd", road: "rd", dr: "dr", drive: "dr", ln: "ln", lane: "ln",
+  ct: "ct", court: "ct", pl: "pl", place: "pl", blvd: "blvd", boulevard: "blvd", cir: "cir", circle: "cir", ter: "ter", terrace: "ter",
+  hwy: "hwy", highway: "hwy", pkwy: "pkwy", parkway: "pkwy", trl: "trl", trail: "trl", way: "way", loop: "loop", sq: "sq", square: "sq",
+}));
+const UNIT_WORD = /^(?:apt|apartment|unit|ste|suite|bldg|building|lot|spc|space|#)$/i;
+
+/**
+ * What tells apart homes at one number whose street begins with the same word (which is as far as `houseKey`
+ * looks): the directions in the street line ("NE", "North"), its street type ("St", "Avenue") and its unit ("Apt 4",
+ * "Unit B", "#4"), each null when the address does not give it, each written one way. The street line is the
+ * address before its city and state, every part but the last two ("City", "ST 12345"), so an address written
+ * without those commas gives none of it (null).
+ */
+export function streetDetails(address: string | undefined): { directions: string | null; type: string | null; unit: string | null } | null {
+  const parts = (address ?? "").split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 3) return null;
+  // The house number first, left out.
+  const words = parts.slice(0, -2).join(" ").split(/\s+/).slice(1);
+  const directions: string[] = [];
+  let type: string | null = null;
+  let unit: string | null = null;
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i].replace(/\.$/, "");
+    const lower = word.toLowerCase();
+    // A unit is the rest of the street line: "Apt 4", "Unit 4 B", "#4E", "# 4E".
+    if (/^#./.test(word) || (UNIT_WORD.test(word) && i + 1 < words.length)) {
+      unit = (/^#./.test(word) ? [word.slice(1), ...words.slice(i + 1)] : words.slice(i + 1)).join("");
+      break;
+    }
+    if (DIRECTION_WORDS.has(lower)) directions.push(DIRECTION_WORDS.get(lower)!);
+    // Not the street's first word: "St Helens Ave" is a street called St Helens, "Avenue A" one called A.
+    else if (i > 0 && STREET_TYPES.has(lower)) type = STREET_TYPES.get(lower)!;
+  }
+  const unitKey = unit?.replace(/[^A-Za-z0-9]/g, "").toLowerCase() || null;
+  return { directions: directions.length ? directions.sort().join(" ") : null, type, unit: unitKey };
+}
+
 /**
  * Does this text say this house's number and, on the same line and not far
  * after it, its zip? A check that does not depend on reading the address out

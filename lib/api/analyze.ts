@@ -5,6 +5,7 @@ import { AREA_TIME_ZONE } from "@/lib/area";
 import { DEMO_WARNING, UNTESTED_WARNING } from "@/lib/data/demo";
 import type { HouseAsk, HouseData, RecordedFacts } from "@/lib/data/house-data";
 import { addressFromUrl, type ListingInfo } from "@/lib/listing/fetch-listing";
+import { streetDetails } from "@/lib/listing/address";
 import { pageAddress, sameAddress, sameLink } from "@/lib/listing/house";
 import { addressForBlocked, type ResolvedListing } from "@/lib/listing/resolve";
 import { mergeListings, sourcesOf, subjectFromListing } from "@/lib/listing/subject";
@@ -122,6 +123,31 @@ export function recordDiffers(recorded: RecordedFacts, listing: Partial<Record<"
   ];
 }
 
+/**
+ * Why a page found by a deal finder home's address is not that home's, or null when it is. The page must say its
+ * own address (a page with no address of its own, such as the zip code's search page, is not this home's), with the
+ * home's number, the first word of its street and its zip code; the same unit and the same directions, when either
+ * address gives them; and the same street type, when both do. A price it gives must be within 15% of the home's
+ * asking price, since a page for the address at another price may be an older listing, with older photos.
+ */
+export function notThisHome(home: Pick<ListingInfo, "address" | "price">, page: Pick<ListingInfo, "address" | "price">): string | null {
+  if (!page.address) return "the page does not say which house it is";
+  const same = sameAddress(home.address, page.address);
+  if (same === "different") return `it is for another house (${page.address})`;
+  if (same === "unknown") return `its address (${page.address}) cannot be matched to this one`;
+  const mine = streetDetails(home.address);
+  const theirs = streetDetails(page.address);
+  if (mine && theirs) {
+    if (mine.unit !== theirs.unit) return `it is not this home's unit (${page.address})`;
+    if (mine.directions !== theirs.directions || (mine.type && theirs.type && mine.type !== theirs.type)) return `its address (${page.address}) cannot be matched to this one`;
+  }
+  const usd = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
+  if (typeof home.price === "number" && home.price > 0 && typeof page.price === "number" && Math.abs(page.price - home.price) > 0.15 * home.price) {
+    return `it gives another price (${usd(page.price)}, not ${usd(home.price)}) and may be an older listing`;
+  }
+  return null;
+}
+
 export function createAnalyzeHandler(deps: AnalyzeDeps) {
   /** The analysis itself. `outcome` is filled in as it goes so the run is recorded truthfully however it ends. */
   async function analyze(input: AnalyzeInput, outcome: RunOutcome, usage: UsageSummary, userId: string): Promise<Response> {
@@ -137,7 +163,8 @@ export function createAnalyzeHandler(deps: AnalyzeDeps) {
       if (!fetched.fetched) {
         const address = addressForBlocked(fetched) ?? listing?.address;
         const alt = address ? await deps.resolveByAddress(address, fetched.host) : null;
-        if (alt) fetched = { ...alt, url: fetched.url, host: fetched.host, fetched: true, note: alt.readFrom.reason };
+        // A page that does not say its address is taken as the link's, as before (the link is the person's own).
+        if (alt) fetched = { ...alt, address: alt.address ?? address, url: fetched.url, host: fetched.host, fetched: true, note: alt.readFrom.reason };
       }
       if (!fetched.fetched) blockedHost = fetched.host || listing?.host || null;
       // The person's browser read one house and the link turns out to be another: not merged
@@ -147,6 +174,24 @@ export function createAnalyzeHandler(deps: AnalyzeDeps) {
         return json({ error: `The page that was read is for ${listing.address}, and the link is for ${fetched.address}. Clear the link, or paste that link's own page, and run it again.`, listing }, 400);
       }
       listing = listing ? mergeListings(listing, fetched) : fetched;
+    }
+
+    // A home handed over by the deal finder comes with its address and no photos (RentCast gives none). Its listing
+    // is looked for by that address, the way a link a portal will not let the server read is, and its page is used
+    // only when it says itself that it is this home (notThisHome). What is missing, when it is, is said as that.
+    let finderMissing: string | null = null;
+    if (!input.listingUrl && listing?.read?.via === "finder" && listing.photos.length === 0 && input.photos.length === 0 && listing.address) {
+      const alt = await deps.resolveByAddress(listing.address, "the deal finder");
+      const why = alt ? notThisHome(listing, alt) : null;
+      if (alt && !why) {
+        const reason = "The deal finder gives no photos, so this listing's page and photos were read from Estately, found by its address.";
+        listing = mergeListings(listing, { ...alt, note: reason, readFrom: { ...alt.readFrom, reason } });
+      } else if (alt) {
+        console.warn("[analyze] the page found by the finder's address was not used", { host: alt.readFrom.host, why });
+        finderMissing = `flip found a page for ${listing.address} on Estately, but ${why}, so its photos were not used.`;
+      } else {
+        finderMissing = `flip could not find this listing's photos online by its address (${listing.address}).`;
+      }
     }
 
     // Uploaded photos first, then everything the listing page exposes, then
@@ -172,7 +217,9 @@ export function createAnalyzeHandler(deps: AnalyzeDeps) {
       // page (without photos): what helps them next is the same three ways in.
       const error = blockedHost
         ? `${blockedHost} would not let us read the page${listing?.address ? ` for ${listing.address}` : ""}. On the listing page press ⌘A then ⌘C, paste into this form, and run it again. Or drag the gallery photos into the drop zone and enter the asking price.`
-        : remoteUrls.length
+        : finderMissing && remoteUrls.length === 0
+          ? `${finderMissing} Open the home on Zillow, drag its photos into the drop zone, and run it again.`
+          : remoteUrls.length
           ? "None of the photo links could be fetched. Upload the photos instead."
           : "No photos. Upload the listing photos or pass photo URLs.";
       console.warn("[analyze] 400 no photos", { host: listing?.host, fetched: listing?.fetched, blocked: Boolean(blockedHost), pagePhotos: listing?.photos.length ?? 0, remoteUrls: remoteUrls.length, failed: failed.length, uploaded: uploaded.length });

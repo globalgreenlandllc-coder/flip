@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { RepairLevel, ScreenResult } from "@/lib/engine/screen";
 import type { DealSearch, DealSearchAnswer, DealSearchEstimate, FoundHome, HomeType } from "@/lib/data/deal-finder";
 import { parseMoney } from "@/lib/finder/money";
+import { browserNotes, noteFullAnalysis } from "@/lib/finder/hand-off";
 import { DealMap, type MapTiles } from "./deal-map";
 import { HEAT_WORDS, analyzeHref, money, zillowHref, type MapHome } from "./shared";
 
@@ -220,7 +221,7 @@ export function Finder({ connected, tiles }: { connected: boolean; tiles: MapTil
               </span>
               {homes.length > 0 && ` · ${count("hot")} hot · ${count("warm")} warm`}
               <span className="block text-xs text-ink-500" data-finder-rule>
-                Hot: at least {money(answer.search.targetProfit)} left at the asking price after a {answer.search.repair} repair and every cost of the deal. A home near the edge of a zip code is compared only with the zip codes searched: add the one next to it for a fuller look. The sales behind a value are listed when a home is checked.
+                Hot: at least {money(answer.search.targetProfit)} left at the asking price after a {answer.search.repair} repair and every cost of the deal. &quot;Full analysis&quot; opens a home in a new tab and runs the whole analysis, photos and all; it uses one of your analyses for the month. A home near the edge of a zip code is compared only with the zip codes searched: add the one next to it for a fuller look. The sales behind a value are listed when a home is checked.
               </span>
               {answer.inRange > homes.length && <span className="block text-xs text-ink-500">Showing the {homes.length.toLocaleString("en-US")} most promising of {answer.inRange.toLocaleString("en-US")}.</span>}
               <span className="block text-xs text-ink-500">
@@ -383,8 +384,23 @@ function HomeLinks({ home: h, attr }: { home: FoundHome; attr: "data-finder-anal
       <a href={zillowHref(l.address)} target="_blank" rel="noreferrer noopener" className="underline" onClick={(e) => e.stopPropagation()}>
         Zillow
       </a>
-      <a href={analyzeHref({ address: l.address, price: l.price, beds: l.beds, baths: l.baths, sqft: l.sqft })} className="ml-3 font-medium underline" onClick={(e) => e.stopPropagation()} {...{ [attr]: "" }}>
-        Analyze with photos
+      {/* A new tab, so that the search stays where it is. The click leaves the note that starts the analysis there (lib/finder/hand-off.ts). */}
+      <a
+        href={analyzeHref({ address: l.address, price: l.price, beds: l.beds, baths: l.baths, sqft: l.sqft })}
+        target="_blank"
+        rel="noopener"
+        className="ml-3 font-medium underline"
+        onClick={(e) => {
+          e.stopPropagation();
+          noteFullAnalysis(browserNotes(), l.address, Date.now());
+        }}
+        // The middle button opens a tab too; a right click (which some browsers also report here) leaves no note.
+        onAuxClick={(e) => {
+          if (e.button === 1) noteFullAnalysis(browserNotes(), l.address, Date.now());
+        }}
+        {...{ [attr]: "" }}
+      >
+        Full analysis
       </a>
     </>
   );
