@@ -394,7 +394,10 @@ function HomeLinks({ home: h, attr }: { home: FoundHome; attr: "data-finder-anal
           e.stopPropagation();
           noteFullAnalysis(browserNotes(), l.address, Date.now());
         }}
-        onAuxClick={() => noteFullAnalysis(browserNotes(), l.address, Date.now())}
+        // The middle button opens a tab too; a right click (which some browsers also report here) leaves no note.
+        onAuxClick={(e) => {
+          if (e.button === 1) noteFullAnalysis(browserNotes(), l.address, Date.now());
+        }}
         {...{ [attr]: "" }}
       >
         Full analysis

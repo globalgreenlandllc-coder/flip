@@ -52,7 +52,10 @@ function popupContent(home: MapHome): HTMLElement {
     if (full) {
       const note = () => noteFullAnalysis(browserNotes(), home.address, Date.now());
       a.addEventListener("click", note);
-      a.addEventListener("auxclick", note);
+      // The middle button opens a tab too; a right click (which some browsers also report here) leaves no note.
+      a.addEventListener("auxclick", (e) => {
+        if (e.button === 1) note();
+      });
     }
     links.appendChild(a);
   }

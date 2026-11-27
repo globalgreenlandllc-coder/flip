@@ -5,6 +5,7 @@ import { AREA_TIME_ZONE } from "@/lib/area";
 import { DEMO_WARNING, UNTESTED_WARNING } from "@/lib/data/demo";
 import type { HouseAsk, HouseData, RecordedFacts } from "@/lib/data/house-data";
 import { addressFromUrl, type ListingInfo } from "@/lib/listing/fetch-listing";
+import { streetDetails } from "@/lib/listing/address";
 import { pageAddress, sameAddress, sameLink } from "@/lib/listing/house";
 import { addressForBlocked, type ResolvedListing } from "@/lib/listing/resolve";
 import { mergeListings, sourcesOf, subjectFromListing } from "@/lib/listing/subject";
@@ -124,15 +125,22 @@ export function recordDiffers(recorded: RecordedFacts, listing: Partial<Record<"
 
 /**
  * Why a page found by a deal finder home's address is not that home's, or null when it is. The page must say its
- * own address, with the home's number, street and zip code (a page with no address of its own, such as the zip
- * code's search page, is not this home's); and a price it gives must be within 15% of the home's asking price, since
- * a page for the address at another price may be an older listing, with older photos.
+ * own address (a page with no address of its own, such as the zip code's search page, is not this home's), with the
+ * home's number, the first word of its street and its zip code; the same unit and the same directions, when either
+ * address gives them; and the same street type, when both do. A price it gives must be within 15% of the home's
+ * asking price, since a page for the address at another price may be an older listing, with older photos.
  */
 export function notThisHome(home: Pick<ListingInfo, "address" | "price">, page: Pick<ListingInfo, "address" | "price">): string | null {
   if (!page.address) return "the page does not say which house it is";
   const same = sameAddress(home.address, page.address);
   if (same === "different") return `it is for another house (${page.address})`;
   if (same === "unknown") return `its address (${page.address}) cannot be matched to this one`;
+  const mine = streetDetails(home.address);
+  const theirs = streetDetails(page.address);
+  if (mine && theirs) {
+    if (mine.unit !== theirs.unit) return `it is not this home's unit (${page.address})`;
+    if (mine.directions !== theirs.directions || (mine.type && theirs.type && mine.type !== theirs.type)) return `its address (${page.address}) cannot be matched to this one`;
+  }
   const usd = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
   if (typeof home.price === "number" && home.price > 0 && typeof page.price === "number" && Math.abs(page.price - home.price) > 0.15 * home.price) {
     return `it gives another price (${usd(page.price)}, not ${usd(home.price)}) and may be an older listing`;

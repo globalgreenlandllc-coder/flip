@@ -944,7 +944,10 @@ test("analyze: a page found by a finder home's address is used only when it says
   const cases: [string, { address?: string; price?: number }, string | null][] = [
     ["no address of its own (the zip code's search page, say)", { price: 245_000 }, "the page does not say which house it is"],
     ["another house", { address: "610 Sample St, Fixture Falls, WA 98000", price: 245_000 }, "it is for another house (610 Sample St, Fixture Falls, WA 98000)"],
-    ["another street at the same number", { address: "608 Oak Ave, Fixture Falls, WA 98000", price: 245_000 }, "its address (608 Oak Ave, Fixture Falls, WA 98000) cannot be matched to this one"],
+    ["another street at the same number", { address: "608 Oak St, Fixture Falls, WA 98000", price: 245_000 }, "its address (608 Oak St, Fixture Falls, WA 98000) cannot be matched to this one"],
+    ["a unit at the same number", { address: "608 Sample St, Unit 7, Fixture Falls, WA 98000", price: 245_000 }, "it is not this home's unit (608 Sample St, Unit 7, Fixture Falls, WA 98000)"],
+    ["the same street word, the other side of town", { address: "608 N Sample St, Fixture Falls, WA 98000", price: 245_000 }, "its address (608 N Sample St, Fixture Falls, WA 98000) cannot be matched to this one"],
+    ["the same street word, another kind of street", { address: "608 Sample Ave, Fixture Falls, WA 98000", price: 245_000 }, "its address (608 Sample Ave, Fixture Falls, WA 98000) cannot be matched to this one"],
     ["this house at another price", { address: "608 Sample Street, Fixture Falls, WA 98000", price: 199_000 }, "it gives another price ($199,000, not $245,000) and may be an older listing"],
     ["this house a little cheaper", { address: "608 Sample Street, Fixture Falls, WA 98000", price: 229_000 }, null],
     ["this house, no price on the page", { address: "608 SAMPLE ST, Fixture Falls, WA 98000" }, null],

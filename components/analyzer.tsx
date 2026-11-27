@@ -8,7 +8,7 @@ import { parseFetchedListing, parsePastedListing, type ListingInfo } from "@/lib
 import { detectExtension, fetchViaExtension } from "@/lib/listing/extension";
 import Link from "next/link";
 import type { Prefill } from "@/lib/listing/prefill";
-import { browserNotes, takeFullAnalysis } from "@/lib/finder/hand-off";
+import { browserNotes, takeFullAnalysisOnce } from "@/lib/finder/hand-off";
 import { analysisStarted, browserRead, formFromPrefill, houseLearned, linkGiven, linkPasted, listingToSend, pagePasted, photoLinksAdded, type HouseForm } from "@/lib/listing/form";
 import { webLink } from "@/lib/listing/house";
 import { ReportView, WithheldNote } from "@/components/report/report-view";
@@ -90,8 +90,9 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
   useEffect(() => {
     if (autoRan.current || house.read?.read?.via !== "finder") return;
     autoRan.current = true;
-    if (!takeFullAnalysis(browserNotes(), house.read.address, Date.now())) return;
-    void analyze(linkGiven(house, house.link, 0));
+    void takeFullAnalysisOnce(browserNotes(), house.read.address, Date.now()).then((clicked) => {
+      if (clicked) void analyze(linkGiven(house, house.link, 0));
+    });
     // Once, on arrival: what the form holds then is the finder's home.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
