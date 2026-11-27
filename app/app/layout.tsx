@@ -5,6 +5,7 @@ import { Icon } from "@/components/ui/icon";
 import { AppNav, Crumb } from "@/components/app/nav";
 import { MobileMenu } from "@/components/app/mobile-menu";
 import { db } from "@/lib/db";
+import { adminEmails, isAdmin } from "@/lib/admin/access";
 
 /** How many deals this person has saved, for the sidebar. A database that cannot say leaves the number off. */
 async function savedDeals(userId: string | null): Promise<number | undefined> {
@@ -22,13 +23,15 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
   const dealCount = await savedDeals(userId);
   const name = user?.firstName ?? user?.username ?? user?.primaryEmailAddress?.emailAddress ?? "Your workspace";
   const email = user?.primaryEmailAddress?.emailAddress;
+  // The Admin link shows only to an admin; the page itself checks again (app/app/admin/page.tsx).
+  const admin = isAdmin(user, adminEmails());
 
   return (
     <div className="flex flex-1">
       <aside className="hidden w-[232px] shrink-0 border-r border-ink-200 bg-white lg:block">
         <div className="sticky top-0 flex h-screen flex-col overflow-y-auto px-[18px] pb-5 pt-7">
         <Logo href="/app" className="mx-3.5 mb-7 self-start" />
-        <AppNav dealCount={dealCount} />
+        <AppNav dealCount={dealCount} admin={admin} />
         <div className="mt-auto pt-6">
           <div className="rounded-xl border border-[#e6ebdf] bg-[#f3f6ef] px-3.5 py-4">
             <Icon name="shield" className="mb-2.5 h-5 w-5 text-[#76975d]" />
@@ -51,7 +54,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
             fixed panel, and the panel would open with no height (the review of 2026-11-27). */}
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-ink-200 bg-white px-4 sm:px-6 lg:h-[72px] lg:px-9">
           <div className="min-w-0 lg:hidden">
-            <MobileMenu dealCount={dealCount} />
+            <MobileMenu dealCount={dealCount} admin={admin} />
           </div>
           <div className="hidden min-w-0 lg:block">
             <Crumb />

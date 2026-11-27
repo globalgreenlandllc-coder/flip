@@ -17,6 +17,9 @@ export function moneyShort(n: number): string {
  *  day (a card saved after 4 PM Pacific said "Nov 28" on the server and "Nov 27" in the browser). */
 export const shortDay = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: AREA_TIME_ZONE });
 
+/** "2026-11-27" → "Nov 27": a day already counted on the area's clock (lib/admin/stats.ts dayKeys), read at noon UTC so no clock moves it. */
+export const dayLabel = (key: string) => new Date(`${key}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
 /** The host a link points at, without "www.": "zillow.com". */
 export function hostName(url: string | null | undefined): string | null {
   if (!url) return null;

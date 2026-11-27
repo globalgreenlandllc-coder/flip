@@ -7,7 +7,7 @@ import { Icon } from "@/components/ui/icon";
 import { AppNav, pageName } from "./nav";
 
 /** On a phone: the wordmark, the page you are on, and a menu that opens the sidebar's lists over the page. */
-export function MobileMenu({ dealCount }: { dealCount?: number }) {
+export function MobileMenu({ dealCount, admin = false }: { dealCount?: number; admin?: boolean }) {
   const pathname = usePathname();
   // Open on the page it was opened on: a new page closes it.
   const [openOn, setOpenOn] = useState<string | null>(null);
@@ -39,7 +39,7 @@ export function MobileMenu({ dealCount }: { dealCount?: number }) {
       <span className="truncate text-sm font-semibold text-ink-700">{pageName(pathname)}</span>
       {open && (
         <div id="mobile-nav" className="fixed inset-x-0 top-16 bottom-0 z-40 overflow-y-auto border-t border-ink-200 bg-white px-4 py-5" data-mobile-nav>
-          <AppNav dealCount={dealCount} onNavigate={() => setOpen(false)} />
+          <AppNav dealCount={dealCount} admin={admin} onNavigate={() => setOpen(false)} />
         </div>
       )}
     </div>
