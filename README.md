@@ -368,6 +368,96 @@ houses and the accuracy test against completed flips are the next two steps;
 `npm run rentcast:check` is the tool for the first, and its requests come
 out of the same plan as the site's (see the budget above).
 
+## Deal finder
+
+`/app/find` (`lib/data/deal-finder.ts`, `lib/engine/screen.ts`,
+`components/finder/`). A person sets an area (one to five zip codes), the
+asking prices to look at, the profit they want after the renovation (at
+least $1,000; "60k" is read as $60,000), how much repair they expect (light,
+medium, heavy) and the kind of home. flip reads the homes for sale there and
+the homes sold there in the last year, gives every home for sale a first
+look, and shows them on a map and in a list, the most promising first (a
+thousand at most, with how many there were). It needs real sold prices
+(`RENTCAST_API_KEY`); without them the page says it cannot search.
+
+**What is asked, and what it costs.** For each zip code and kind of home:
+its homes for sale (RentCast's sale listings), whatever their price, one
+request (500 at most), kept a day, since listings are updated daily; and its
+homes sold in the last twelve months, one or two requests (1,000 at most),
+kept a week. Where more are for sale or sold than that, what was read is
+said to be a part. So a zip code and kind of home not searched that day
+costs two or three lookups, and nothing again that day: another price range,
+profit target or repair is worked out from what was kept. Before a search,
+the page asks the server what it may cost (`estimate`, from what is kept,
+asking nothing) and, unless that is nothing, says it and waits for a yes.
+Every lookup goes through the same budget, person's share and rules as an
+analysis (`lib/data/asker.ts`, shared with `house-data.ts`). A search's
+requests have 60 seconds; valuing what they returned takes a second or two
+more. A zip code that could not be read is named with the reason: the
+lookups used up, the service not answering or refusing flip, or the search
+running out of time before it was read in full (nothing was sent for it).
+Of a listing, flip keeps where the home is, its size, rooms, year, lot,
+price, kind of sale (Standard, Foreclosure, Short Sale, New Construction),
+days listed and MLS number. The listing agent's and office's names, phones
+and e-mails are in RentCast's answer and are never read.
+
+**The first look** (`screenListing`). The full analysis's own valuation and
+deal math, against the sold homes of its kind within a mile and twelve
+months, from the zip codes searched (a home near the edge of one is compared
+only with those, and the page says so), with one thing guessed instead of
+read: the repair. The value is what homes like it sold for around it, in
+whatever shape they sold, as with all public records, and the page calls it
+that ("Similar homes sold for"), never an after-repair value. RentCast gives
+no photos and no description for a home for sale, so the repair is the
+person's choice, priced at the full analysis's own rates for a house in that
+condition (light $18 to $35 a square foot, medium $30 to $60, heavy $55 to
+$100; the likely figure is used, with the usual 12% reserve). A home is
+*hot* when at least the profit wanted is left at the asking price after the
+repair and every cost of the deal, *warm* with some profit short of it, *no
+profit* without, and *can't value* when its listing gives no living area,
+no home of similar size sold within a mile of it, or the homes that did all
+differ from it too much (each said as that). A home's own last sale is not
+one of its comps. Hot homes are bigger, orange pins on the map; every pin
+says what similar homes sold for, from how many sales and how sure. Nothing
+here is a verdict: the page opens with "A first look, not a verdict", the
+API answers `untested: true` and no GO, and a home that needs more than the
+repair chosen looks better here than it is. The first look does not list
+the sales behind each value; a closer look and a full analysis do.
+
+**A closer look** (`check`, "Check the hot ones"). Up to five homes are then
+looked at one by one, as an analysis does before its photos are read: the
+house's own public record, and the homes sold right around it
+(`house-data.ts`, two to five lookups a home), with the listing's size and
+rooms over the record's. It works from the search as it was kept and never
+searches an area again; the page says what it will cost before it runs. Each
+home then says what it was checked against (how far and how far back, when
+read, whether a part), lists the sales its value was drawn from, or says why
+its real data could not be had. All of it keeps to one clock of 100 seconds
+from the moment it is asked: a home it cannot start in time is skipped, and
+says so.
+
+**Into the full analysis.** "Analyze with photos" opens `/app` with the
+home's address, asking price, size and rooms filled in (`from=finder`,
+`lib/listing/prefill.ts`), marked as filled in from a deal finder link (the
+browser's word for it, like a pasted page). The photos are the person's to
+add: the box links to the home on Zillow, to drag them from. The data the
+closer look read is used again at no cost.
+
+**The map** (`components/finder/deal-map.tsx`, Leaflet). Its background is
+CARTO's Voyager map when `MAP_TILES_CARTO_KEY` is set (free for commercial
+use up to a million tiles a month, by CARTO's own terms; it needs a CARTO
+account), and OpenStreetMap's own tiles otherwise, which its policy allows
+for light use and says may be withdrawn from commercial services at any
+time. `MAP_TILES=off` shows the pins alone (the local stand). Every word in a
+pin's popup is set as text, never as markup.
+
+Not built yet: saved searches checked every morning, and an e-mail when a
+new hot home appears (part two, on the owner's word); areas other than zip
+codes; the listing's price history; a closer look saying where the listing
+and the public record disagree (the full analysis does). Searches are not
+rate-limited: they ask no AI, and their lookups are budgeted. Not measured:
+how many of the homes called hot really are good flips.
+
 ## What the listing said
 
 `lib/listing/` keeps what a listing page says instead of three numbers: its

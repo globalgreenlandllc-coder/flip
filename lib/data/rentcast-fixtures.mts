@@ -112,7 +112,7 @@ export function soldHomes(
 }
 
 export interface Call {
-  kind: "property" | "sales";
+  kind: "property" | "sales" | "listings" | "area-sales";
   url: string;
   params: Record<string, string>;
   key: string | null;
@@ -125,7 +125,7 @@ export interface FakeRentcast {
   fetch: Fetcher;
   calls: Call[];
   /** What the next answers are instead of the records: a status, a body that is not a list, or no answer at all. */
-  fail: { status?: number; garbled?: boolean; noAnswer?: boolean; only?: "property" | "sales" } | null;
+  fail: { status?: number; garbled?: boolean; noAnswer?: boolean; only?: Call["kind"] } | null;
   /** Answer an address it does not have with the house nearest to it on the same street. Whether the real service ever does has not been seen: this is what the code must be safe against. */
   nearest: boolean;
   /** How long each answer takes, in milliseconds. */
@@ -147,7 +147,55 @@ const placed = (address: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-export function fakeRentcast(records: Record<string, unknown>[]): FakeRentcast {
+export interface ListingMade extends Made {
+  /** Asked for it. */
+  asking?: number;
+  listingType?: string;
+  /** On the market this many days. */
+  daysOnMarket?: number;
+}
+
+/**
+ * One home for sale, the way RentCast's sale listings give it. It carries the
+ * listing agent's and office's names, phones and e-mails, as the real ones
+ * do, so the tests can show that none of it gets past the reader.
+ */
+export function listing(n: number, made: ListingMade = {}): Record<string, unknown> {
+  const base = record(n, made);
+  const days = made.daysOnMarket ?? 12 + (n % 40);
+  return {
+    id: base.id,
+    formattedAddress: base.formattedAddress,
+    addressLine1: base.addressLine1,
+    city: base.city,
+    state: base.state,
+    zipCode: base.zipCode,
+    county: base.county,
+    latitude: base.latitude,
+    longitude: base.longitude,
+    propertyType: base.propertyType,
+    bedrooms: base.bedrooms,
+    bathrooms: base.bathrooms,
+    squareFootage: base.squareFootage,
+    lotSize: base.lotSize,
+    yearBuilt: base.yearBuilt,
+    status: "Active",
+    price: made.asking ?? 450_000,
+    listingType: made.listingType ?? "Standard",
+    listedDate: dayBefore(days),
+    removedDate: null,
+    createdDate: dayBefore(days),
+    lastSeenDate: dayBefore(0),
+    daysOnMarket: days,
+    mlsName: "FixtureMLS",
+    mlsNumber: `F${100_000 + n}`,
+    listingAgent: { name: "Robin Madeup", phone: "5550100", email: "robin@madeup.invalid", website: "https://agent.invalid" },
+    listingOffice: { name: "Madeup Realty", phone: "5550101", email: "office@madeup.invalid", website: "https://office.invalid" },
+    history: { [dayBefore(days).slice(0, 10)]: { event: "Sale Listing", price: made.asking ?? 450_000, listingType: made.listingType ?? "Standard", listedDate: dayBefore(days), removedDate: null, daysOnMarket: days } },
+  };
+}
+
+export function fakeRentcast(records: Record<string, unknown>[], listings: Record<string, unknown>[] = []): FakeRentcast {
   const fake: FakeRentcast = {
     calls: [],
     fail: null,
@@ -156,14 +204,30 @@ export function fakeRentcast(records: Record<string, unknown>[]): FakeRentcast {
     fetch: async (url, init) => {
       const u = new URL(url);
       const params = Object.fromEntries(u.searchParams.entries());
-      const kind = params.address !== undefined ? "property" : "sales";
+      const kind: Call["kind"] = u.pathname.endsWith("/listings/sale") ? "listings" : params.address !== undefined ? "property" : params.zipCode !== undefined ? "area-sales" : "sales";
       fake.calls.push({ kind, url, params, key: init.headers["x-api-key"] ?? null, redirect: init.redirect, cache: init.cache });
       if (fake.delayMs) await new Promise((done) => setTimeout(done, fake.delayMs));
       const failing = fake.fail && (!fake.fail.only || fake.fail.only === kind) ? fake.fail : null;
       if (failing?.noAnswer) throw new DOMException("The operation timed out.", "TimeoutError");
       if (failing?.status) return reply(failing.status, { status: failing.status, error: "test/refused", message: "refused by the test" });
       if (failing?.garbled) return reply(200, { message: "not a list" });
+      const limit = Number(params.limit ?? 50);
+      const offset = Number(params.offset ?? 0);
+      const page = (matches: Record<string, unknown>[]) =>
+        matches.length === 0 || offset >= matches.length
+          ? reply(404, { status: 404, error: "resource/not-found", message: "No results" })
+          : reply(200, matches.slice(offset, offset + limit), params.includeTotalCount === "true" ? { "x-total-count": String(matches.length), "x-limit": String(limit), "x-offset": String(offset) } : {});
+
+      if (kind === "listings") {
+        if (params.status !== "Active") return reply(400, { status: 400, error: "test/unexpected", message: "only active listings are asked for" });
+        return page(listings.filter((l) => l.zipCode === params.zipCode && l.propertyType === params.propertyType));
+      }
       if (!u.pathname.endsWith("/properties")) return reply(404, { status: 404, error: "not-found", message: "no such endpoint" });
+
+      if (kind === "area-sales") {
+        const days = Number(params.saleDateRange.split(":")[1]);
+        return page(records.filter((r) => r.zipCode === params.zipCode && r.propertyType === params.propertyType && typeof r.lastSaleDate === "string" && (today.getTime() - Date.parse(r.lastSaleDate)) / 86_400_000 <= days));
+      }
 
       if (kind === "property") {
         const wanted = placed(params.address);
@@ -192,7 +256,6 @@ export function fakeRentcast(records: Record<string, unknown>[]): FakeRentcast {
       if (matches.length === 0) return reply(404, { status: 404, error: "resource/not-found", message: "No results" });
       // No stated order: the far ones first, so a reader that took "the first 500" for "the nearest 500" is caught.
       const ordered = [...matches].sort((a, b) => haversineMiles(lat, lng, b.latitude as number, b.longitude as number) - haversineMiles(lat, lng, a.latitude as number, a.longitude as number));
-      const limit = Number(params.limit ?? 50);
       return reply(200, ordered.slice(0, limit), params.includeTotalCount === "true" ? { "x-total-count": String(matches.length), "x-limit": String(limit), "x-offset": "0" } : {});
     },
   };

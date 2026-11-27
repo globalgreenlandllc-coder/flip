@@ -159,9 +159,118 @@ export function salesUrl(base: string, q: SalesQuery): string {
   })}`;
 }
 
-export interface RentcastReply {
+/** The homes sold in one zip code over the last `days`: the comps a whole area's listings are valued against. */
+export interface AreaSalesQuery {
+  zip: string;
+  days: number;
+  propertyType: string;
+  offset: number;
+}
+
+export function areaSalesUrl(base: string, q: AreaSalesQuery): string {
+  return `${base}/properties?${query({
+    zipCode: q.zip,
+    propertyType: q.propertyType,
+    saleDateRange: `*:${Math.max(1, Math.round(q.days))}`,
+    limit: String(RENTCAST_PAGE),
+    offset: String(Math.max(0, Math.round(q.offset))),
+    includeTotalCount: "true",
+  })}`;
+}
+
+/**
+ * A home for sale, as RentCast's sale listings give it, reduced to what flip
+ * uses. The listing agent's and the office's names, phones and e-mails are in
+ * the answer and are never read; nor is the listing's history. RentCast gives
+ * no photos and no description for a listing (its own docs, read 2026-11-26).
+ */
+export interface ListingRecord {
+  id: string;
+  address: string;
+  lat: number;
+  lng: number;
+  zip: string | null;
+  city: string | null;
+  state: string | null;
+  propertyType: string | null;
+  sqft: number | null;
+  lotSqft: number | null;
+  beds: number | null;
+  baths: number | null;
+  yearBuilt: number | null;
+  /** The asking price. */
+  price: number;
+  /** "Standard", "New Construction", "Foreclosure", "Short Sale". */
+  listingType: string | null;
+  /** YYYY-MM-DD. */
+  listedDate: string | null;
+  daysOnMarket: number | null;
+  mlsName: string | null;
+  mlsNumber: string | null;
+}
+
+/** One sale listing of an answer, or null when it does not say where the home is or what is asked for it. */
+export function listingFrom(raw: unknown): ListingRecord | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const id = text(r.id, 200);
+  const address = text(r.formattedAddress, 300);
+  const lat = within(r.latitude, -90, 90);
+  const lng = within(r.longitude, -180, 180);
+  const price = positive(r.price, 1_000, 1_000_000_000);
+  if (!id || !address || lat === null || lng === null || price === null) return null;
+  const zip = text(r.zipCode, 10);
+  const state = text(r.state, 2);
+  const listed = typeof r.listedDate === "string" && /^\d{4}-\d{2}-\d{2}/.test(r.listedDate) && !Number.isNaN(Date.parse(r.listedDate)) ? r.listedDate.slice(0, 10) : null;
+  const days = within(r.daysOnMarket, 0, 20_000);
+  return {
+    id,
+    address,
+    lat,
+    lng,
+    zip: zip && /^\d{5}$/.test(zip) ? zip : null,
+    city: text(r.city, 80),
+    state: state && /^[A-Za-z]{2}$/.test(state) ? state.toUpperCase() : null,
+    propertyType: text(r.propertyType, 40),
+    sqft: positive(r.squareFootage, 100, 50_000),
+    lotSqft: positive(r.lotSize, 1, 50_000_000),
+    beds: positive(r.bedrooms, 0, 30),
+    baths: positive(r.bathrooms, 0, 30),
+    yearBuilt: within(r.yearBuilt, 1700, THIS_YEAR + 2),
+    price,
+    listingType: text(r.listingType, 40),
+    listedDate: listed,
+    daysOnMarket: days === null ? null : Math.round(days),
+    mlsName: text(r.mlsName, 80),
+    mlsNumber: text(r.mlsNumber, 40),
+  };
+}
+
+/**
+ * The homes for sale in one zip code, of one kind. Asked for whatever their
+ * price: a zip code's homes of one kind for sale fit in one request as a
+ * rule, and the price range is then a filter that costs nothing to change.
+ */
+export interface ListingsQuery {
+  zip: string;
+  propertyType: string;
+  offset: number;
+}
+
+export function listingsUrl(base: string, q: ListingsQuery): string {
+  return `${base}/listings/sale?${query({
+    zipCode: q.zip,
+    status: "Active",
+    propertyType: q.propertyType,
+    limit: String(RENTCAST_PAGE),
+    offset: String(Math.max(0, Math.round(q.offset))),
+    includeTotalCount: "true",
+  })}`;
+}
+
+export interface RentcastReply<T = PropertyRecord> {
   status: number;
-  records: PropertyRecord[];
+  records: T[];
   /** How many records the answer held, readable or not. */
   returned: number;
   /** How many records match in all, when the answer says (it returns 500 at most). */
@@ -213,12 +322,21 @@ async function bodyText(res: Response, maxBytes: number): Promise<string | null>
   return Buffer.concat(chunks).toString("utf8");
 }
 
+/** How the records of an answer are read: a property record by default, a sale listing for the listings endpoint. */
+export type RecordReader<T> = (raw: unknown) => T | null;
+
 /**
  * One request. Any status comes back as a reply (only 200 is billed); a
  * request that got no answer throws NoAnswer. The key travels in a header
  * and appears nowhere else: not in the address, not in an error.
  */
-export async function askRentcast(url: string, key: string, fetcher: Fetcher = fetch, timeoutMs = 15_000): Promise<RentcastReply> {
+export async function askRentcast<T = PropertyRecord>(
+  url: string,
+  key: string,
+  fetcher: Fetcher = fetch,
+  timeoutMs = 15_000,
+  read: RecordReader<T> = recordFrom as unknown as RecordReader<T>,
+): Promise<RentcastReply<T>> {
   let res: Response;
   let body: string | null;
   // One deadline for the whole exchange, the reading of the answer included. A timer of its own, cleared the
@@ -245,7 +363,7 @@ export async function askRentcast(url: string, key: string, fetcher: Fetcher = f
     parsed = null;
   }
   if (!Array.isArray(parsed)) return { status: 200, records: [], returned: 0, total: null, garbled: true };
-  const records = parsed.flatMap((raw) => recordFrom(raw) ?? []);
+  const records = parsed.flatMap((raw) => read(raw) ?? []);
   const header = res.headers.get("x-total-count");
   const counted = header === null || header.trim() === "" ? NaN : Number(header);
   return { status: 200, records, returned: parsed.length, total: Number.isInteger(counted) && counted >= 0 ? counted : null };
