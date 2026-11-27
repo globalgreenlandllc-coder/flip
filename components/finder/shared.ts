@@ -34,7 +34,11 @@ export function zillowHref(address: string): string {
   return `https://www.zillow.com/homes/${encodeURIComponent(slug)}_rb/`;
 }
 
-/** The full analysis, opened with the home's address, asking price, size and rooms filled in (lib/listing/prefill.ts, from=finder). */
+/**
+ * The full analysis of the home: the address, asking price, size and rooms filled in (lib/listing/prefill.ts,
+ * from=finder), the photos looked for on the server by the address. Nothing in the link starts it; the click's
+ * note does (lib/finder/hand-off.ts).
+ */
 export function analyzeHref(home: Pick<MapHome, "address" | "price" | "beds" | "baths" | "sqft">): string {
   const params = new URLSearchParams({ from: "finder", address: home.address, price: String(Math.round(home.price)) });
   if (home.beds !== null) params.set("beds", String(home.beds));

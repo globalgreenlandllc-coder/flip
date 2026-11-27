@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Report } from "@/lib/engine/types";
 import type { RenovationPlan } from "@/lib/engine/renovation";
 import type { PhotoAssessment } from "@/lib/vision/schema";
@@ -8,6 +8,7 @@ import { parseFetchedListing, parsePastedListing, type ListingInfo } from "@/lib
 import { detectExtension, fetchViaExtension } from "@/lib/listing/extension";
 import Link from "next/link";
 import type { Prefill } from "@/lib/listing/prefill";
+import { browserNotes, takeFullAnalysis } from "@/lib/finder/hand-off";
 import { analysisStarted, browserRead, formFromPrefill, houseLearned, linkGiven, linkPasted, listingToSend, pagePasted, photoLinksAdded, type HouseForm } from "@/lib/listing/form";
 import { webLink } from "@/lib/listing/house";
 import { ReportView, WithheldNote } from "@/components/report/report-view";
@@ -81,6 +82,20 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
     return () => { alive = false; };
   }, []);
 
+  // Opened by the deal finder's "Full analysis": the analysis starts by itself, once, when this browser holds the
+  // note of that click, which it takes (lib/finder/hand-off.ts). The home's photos are looked for on the server, by
+  // its address. A reload, Back, a second tab, or a link from anywhere else finds no note: the form is filled and
+  // waits for the button.
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (autoRan.current || house.read?.read?.via !== "finder") return;
+    autoRan.current = true;
+    if (!takeFullAnalysis(browserNotes(), house.read.address, Date.now())) return;
+    void analyze(linkGiven(house, house.link, 0));
+    // Once, on arrival: what the form holds then is the finder's home.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const addFiles = useCallback((list: FileList | File[] | null) => {
     if (!list) return;
     const incoming = Array.from(list)
@@ -150,8 +165,10 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
         setStatus(`Preparing ${files.length} photo${files.length === 1 ? "" : "s"}…`);
         for (const { file } of files.slice(0, MAX_UPLOADS)) photos.push(await toJpeg(file));
       }
-      if (!listingUrl && photos.length === 0) throw new Error("Paste a listing link, add photos, or paste photo links.");
-      setStatus(photos.length ? `Looking at ${photos.length} photo${photos.length === 1 ? "" : "s"} and running the numbers…` : "Reading the listing…");
+      // A home from the deal finder needs neither: the server looks for its photos by its address.
+      const fromFinder = form.read?.read?.via === "finder";
+      if (!listingUrl && photos.length === 0 && !fromFinder) throw new Error("Paste a listing link, add photos, or paste photo links.");
+      setStatus(photos.length ? `Looking at ${photos.length} photo${photos.length === 1 ? "" : "s"} and running the numbers…` : fromFinder ? "Finding this listing's photos by its address, then reading them and running the numbers…" : "Reading the listing…");
       const listing = listingToSend(form);
       const askingPrice = form.price ? Number(form.price.replace(/[^0-9.]/g, "")) : listing?.price;
       const res = await fetch("/api/v1/analyze", {
@@ -323,7 +340,7 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
                 {read.read?.via === "finder" ? (
                   // The deal finder hands over a listing record: it never has a description or photos, and the place to get the photos is the listing.
                   <>
-                    . The deal finder gives no photos: open the home on{" "}
+                    . The deal finder gives no photos: flip looks for this listing&apos;s photos by its address. If it cannot find them, open the home on{" "}
                     <a href={zillowHref(read.address ?? "")} target="_blank" rel="noreferrer noopener" className="underline" data-form-zillow>
                       Zillow
                     </a>{" "}

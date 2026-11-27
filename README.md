@@ -436,12 +436,29 @@ its real data could not be had. All of it keeps to one clock of 100 seconds
 from the moment it is asked: a home it cannot start in time is skipped, and
 says so.
 
-**Into the full analysis.** "Analyze with photos" opens `/app` with the
-home's address, asking price, size and rooms filled in (`from=finder`,
-`lib/listing/prefill.ts`), marked as filled in from a deal finder link (the
-browser's word for it, like a pasted page). The photos are the person's to
-add: the box links to the home on Zillow, to drag them from. The data the
-closer look read is used again at no cost.
+**Into the full analysis.** "Full analysis" opens `/app` in a new tab (the
+search stays where it is) with the home's address, asking price, size and
+rooms filled in (`from=finder`, `lib/listing/prefill.ts`), marked as filled
+in from a deal finder link (the browser's word for it, like a pasted page),
+and the analysis starts by itself. What starts it is not in the link: the
+click leaves a note in the browser's storage for two minutes, which the
+page takes, once (`lib/finder/hand-off.ts`). A reload, Back, the second tab
+of a double click, or the same link from anywhere else finds no note, and
+the form waits for the button: no one can spend a person's analyses by
+sending a link, and one click is one run. RentCast gives no photos, so the
+server looks for the home's listing by its address on Estately
+(`lib/listing/resolve.ts`, as for a link a portal will not let it read) and
+uses that page's photos and description only when the page says itself that
+it is this home (`notThisHome` in `lib/api/analyze.ts`): its own address,
+with the home's number, street and zip code, and, when it gives a price, one
+within 15% of the asking price (another price may mean an older listing,
+with older photos). The finder's price, size and rooms stand over the
+page's. When no page is found, or the one found is not used, the run ends
+before the AI is asked (it costs nothing and does not count against the
+month) and says which, and why: the box links to the home on Zillow, to drag
+its photos into the drop zone. A run that reaches the AI is one of the
+person's analyses for the month. The data the closer look read is used again
+at no cost.
 
 **The map** (`components/finder/deal-map.tsx`, Leaflet). Its background is
 CARTO's Voyager map when `MAP_TILES_CARTO_KEY` is set (free for commercial

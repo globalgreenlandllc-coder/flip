@@ -47,9 +47,9 @@ export function prefillFromParams(params: Record<string, string | string[] | und
 /**
  * A home handed over by the deal finder: its address and asking price, and
  * the size and rooms its RentCast listing gives, each held to what a listing
- * fact may be (saneFact). No link and no photos: the photos are the
- * person's to add. The rest (year, lot) the analysis reads from the house's
- * own public record.
+ * fact may be (saneFact). No link and no photos: the server looks for the
+ * photos by the address (lib/api/analyze.ts), or the person adds them. The
+ * rest (year, lot) the analysis reads from the house's own public record.
  */
 function fromFinder(one: (k: string) => string | undefined, now: Date): Prefill | null {
   const address = saneFact("address", { value: (one("address") ?? "").replace(/\s+/g, " ").trim().slice(0, 300), source: "data" });

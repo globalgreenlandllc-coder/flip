@@ -57,6 +57,7 @@ function rig(
     readPhotos?: AnalyzeDeps["readPhotos"];
     fetchListing?: AnalyzeDeps["fetchListing"];
     fetchPhotos?: AnalyzeDeps["fetchPhotos"];
+    resolveByAddress?: AnalyzeDeps["resolveByAddress"];
     /** RentCast as connected (a key and a budget), with `rentcastFetch` standing in for its API. Left out: not connected, the demo. */
     rentcast?: RentcastSettings;
     rentcastFetch?: Fetcher;
@@ -64,7 +65,7 @@ function rig(
 ) {
   const store = new MemoryUsageStore();
   const data = new MemoryDataStore();
-  const seen = { ai: [] as PhotoInput[][], told: [] as PhotoContext[], listings: [] as string[], photoFetches: [] as string[][], houses: [] as HouseAsk[] };
+  const seen = { ai: [] as PhotoInput[][], told: [] as PhotoContext[], listings: [] as string[], photoFetches: [] as string[][], houses: [] as HouseAsk[], resolved: [] as string[] };
   const clock = { now: new Date("2026-11-10T10:00:00.000Z"), user: over.userId === undefined ? "ann" : over.userId };
   const realHouse = createHouseData({ rentcast: () => over.rentcast ?? null, store: data, now: () => clock.now, fetcher: over.rentcastFetch });
   const house = (ask: HouseAsk) => {
@@ -82,7 +83,10 @@ function rig(
       seen.listings.push(url);
       return over.fetchListing ? over.fetchListing(url) : { url, host: new URL(url).hostname, fetched: false, note: "blocked", photos: [] };
     },
-    resolveByAddress: async () => null,
+    resolveByAddress: async (address, blockedHost) => {
+      seen.resolved.push(address);
+      return over.resolveByAddress ? over.resolveByAddress(address, blockedHost) : null;
+    },
     fetchPhotos: async (urls) => {
       seen.photoFetches.push(urls);
       return over.fetchPhotos ? over.fetchPhotos(urls) : { photos: [], failed: urls };
@@ -891,4 +895,72 @@ test("the demo does not age: the same house gets the same demo result whatever d
   assert.equal(later.status, 200);
   assert.deepEqual([later.body.report.arv.point, later.body.report.arv.comps.length, later.body.report.deal.verdict], [first.body.report.arv.point, first.body.report.arv.comps.length, first.body.report.deal.verdict]);
   assert.ok(!later.body.report.riskFlags.some((f) => f.code === "STALE_SALES"));
+});
+
+/** A home handed over by the deal finder, as the analyzer sends it: its address, price, size and rooms; no link, no photos. */
+const FROM_FINDER = { url: "", host: "", fetched: true, address: "608 Sample St, Fixture Falls, WA 98000", price: 245_000, beds: 3, baths: 2, sqft: 1_800, photos: [] as string[], read: { at: "2026-11-10T09:00:00.000Z", via: "finder" } };
+
+test("analyze: a home from the deal finder has its photos looked for by its address, and is analysed with them", async () => {
+  const PAGE_PHOTOS = ["https://photos.example/608-1.jpg", "https://photos.example/608-2.jpg"];
+  const r = rig({
+    resolveByAddress: async (address) => ({ url: "https://www.estately.com/listings/info/608-sample-st-fixture-falls-wa-98000", host: "www.estately.com", fetched: true, address, price: 245_000, photos: PAGE_PHOTOS, description: { text: "Solid house. Sold as-is.", source: "data" }, readFrom: { host: "estately.com", url: "https://www.estately.com/listings/info/608-sample-st-fixture-falls-wa-98000", reason: "placeholder" } }),
+    fetchPhotos: async (urls) => ({ photos: urls.map(() => ({ base64: JPEG, mediaType: "image/jpeg" as const })), failed: [] }),
+  });
+  const res = await r.analyze({ listing: FROM_FINDER });
+  assert.equal(res.status, 200, JSON.stringify(res.body.error));
+  // It was looked for by the address the finder handed over, and nothing else was fetched as a link.
+  assert.deepEqual([r.seen.resolved, r.seen.listings], [["608 Sample St, Fixture Falls, WA 98000"], []]);
+  assert.deepEqual(r.seen.photoFetches, [PAGE_PHOTOS]);
+  assert.equal(res.body.photosUsed.fromListing, 2);
+  // The listing says where its page and photos came from, and that it came from the finder.
+  assert.equal(res.body.listing.read?.via, "finder");
+  assert.equal(res.body.listing.readFrom?.host, "estately.com");
+  assert.equal(res.body.listing.readFrom?.reason, "The deal finder gives no photos, so this listing's page and photos were read from Estately, found by its address.");
+  // The finder's facts stand: its price and size, the page's description beside them.
+  assert.deepEqual([res.body.listing.price, res.body.listing.sqft, res.body.listing.description?.text], [245_000, 1_800, "Solid house. Sold as-is."]);
+});
+
+test("analyze: a home from the deal finder whose photos cannot be found says so, and how to add them, at no cost", async () => {
+  const r = rig();
+  const res = await r.analyze({ listing: FROM_FINDER });
+  assert.equal(res.status, 400);
+  assert.equal(res.body.error, "flip could not find this listing's photos online by its address (608 Sample St, Fixture Falls, WA 98000). Open the home on Zillow, drag its photos into the drop zone, and run it again.");
+  // The AI was not asked, and the run is on record as free: it does not count against the month.
+  assert.deepEqual([r.seen.ai.length, r.store.runs.map((run) => run.outcome.status)], [0, ["free"]]);
+  // With photos of its own, a finder home is not looked up at all.
+  const own = rig();
+  const ran = await own.analyze({ listing: FROM_FINDER, photos: HOUSE.photos });
+  assert.deepEqual([ran.status, own.seen.resolved], [200, []]);
+  // Nor is a listing that did not come from the finder: without photos, it gets the usual answer.
+  const pasted = rig();
+  const plain = await pasted.analyze({ listing: { ...FROM_FINDER, read: { at: FROM_FINDER.read.at, via: "paste" } } });
+  assert.deepEqual([plain.status, plain.body.error, pasted.seen.resolved], [400, "No photos. Upload the listing photos or pass photo URLs.", []]);
+});
+
+test("analyze: a page found by a finder home's address is used only when it says itself that it is that home", async () => {
+  const PAGE = "https://www.estately.com/listings/info/608-sample-st-fixture-falls-wa-98000";
+  const page = (said: { address?: string; price?: number }) => async () => ({ url: PAGE, host: "www.estately.com", fetched: true, photos: ["https://photos.example/p-1.jpg"], ...said, readFrom: { host: "estately.com", url: PAGE, reason: "placeholder" } });
+  const fetchPhotos: AnalyzeDeps["fetchPhotos"] = async (urls) => ({ photos: urls.map(() => ({ base64: JPEG, mediaType: "image/jpeg" as const })), failed: [] });
+  const cases: [string, { address?: string; price?: number }, string | null][] = [
+    ["no address of its own (the zip code's search page, say)", { price: 245_000 }, "the page does not say which house it is"],
+    ["another house", { address: "610 Sample St, Fixture Falls, WA 98000", price: 245_000 }, "it is for another house (610 Sample St, Fixture Falls, WA 98000)"],
+    ["another street at the same number", { address: "608 Oak Ave, Fixture Falls, WA 98000", price: 245_000 }, "its address (608 Oak Ave, Fixture Falls, WA 98000) cannot be matched to this one"],
+    ["this house at another price", { address: "608 Sample Street, Fixture Falls, WA 98000", price: 199_000 }, "it gives another price ($199,000, not $245,000) and may be an older listing"],
+    ["this house a little cheaper", { address: "608 Sample Street, Fixture Falls, WA 98000", price: 229_000 }, null],
+    ["this house, no price on the page", { address: "608 SAMPLE ST, Fixture Falls, WA 98000" }, null],
+  ];
+  for (const [name, said, why] of cases) {
+    const r = rig({ resolveByAddress: page(said), fetchPhotos });
+    const res = await r.analyze({ listing: FROM_FINDER });
+    if (why) {
+      assert.equal(res.status, 400, name);
+      assert.equal(res.body.error, `flip found a page for 608 Sample St, Fixture Falls, WA 98000 on Estately, but ${why}, so its photos were not used. Open the home on Zillow, drag its photos into the drop zone, and run it again.`, name);
+      // Its photos were not even fetched, and nothing was spent.
+      assert.deepEqual([r.seen.photoFetches.flat(), r.seen.ai.length, r.store.runs.map((run) => run.outcome.status)], [[], 0, ["free"]], name);
+    } else {
+      assert.equal(res.status, 200, `${name}: ${JSON.stringify(res.body.error)}`);
+      // Its photos were read; the finder's address and asking price stand.
+      assert.deepEqual([r.seen.photoFetches, res.body.listing.address, res.body.listing.price], [[["https://photos.example/p-1.jpg"]], "608 Sample St, Fixture Falls, WA 98000", 245_000], name);
+    }
+  }
 });

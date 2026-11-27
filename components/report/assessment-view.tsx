@@ -73,7 +73,15 @@ export function ListingCard({ listing }: { listing: ListingInfo }) {
       )}
       {listing.readFrom ? (
         <div className="mt-1 text-brand-700">
-          Read from <a href={listing.readFrom.url} target="_blank" rel="noreferrer" className="underline">{listing.readFrom.host}</a>, the same MLS listing, because {listing.host} blocked the server.
+          {listing.read?.via === "finder" ? (
+            <>
+              Its page and photos were read from <a href={listing.readFrom.url} target="_blank" rel="noreferrer" className="underline">{listing.readFrom.host}</a>, found by its address: the deal finder gives no photos.
+            </>
+          ) : (
+            <>
+              Read from <a href={listing.readFrom.url} target="_blank" rel="noreferrer" className="underline">{listing.readFrom.host}</a>, the same MLS listing, because {listing.host} blocked the server.
+            </>
+          )}
         </div>
       ) : (
         listing.note && <div className="mt-1 text-amber-700">{listing.note}</div>

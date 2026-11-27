@@ -4,6 +4,7 @@ import "leaflet/dist/leaflet.css";
 import { useEffect, useRef } from "react";
 import type { CircleMarker, LayerGroup, Map as LeafletMap } from "leaflet";
 import type { Heat } from "@/lib/engine/screen";
+import { browserNotes, noteFullAnalysis } from "@/lib/finder/hand-off";
 import { analyzeHref, money, zillowHref, type MapHome } from "./shared";
 
 /** Where the map's background comes from. Null: no background, the pins alone (the local stand, which reaches no one). */
@@ -39,14 +40,19 @@ function popupContent(home: MapHome): HTMLElement {
   line("A first look: the repair is your guess, no photos read.", "text-[11px] text-ink-500");
   const links = document.createElement("div");
   links.className = "flex gap-3 pt-1";
-  for (const [href, text, external] of [[zillowHref(home.address), "See on Zillow", true], [analyzeHref(home), "Analyze with photos", false]] as const) {
+  // Both in a new tab: the search stays where it is. Full analysis's click leaves the note that starts the analysis
+  // there (lib/finder/hand-off.ts).
+  for (const [href, text, rel, full] of [[zillowHref(home.address), "See on Zillow", "noreferrer noopener", false], [analyzeHref(home), "Full analysis", "noopener", true]] as const) {
     const a = document.createElement("a");
     a.href = href;
     a.textContent = text;
     a.className = "font-medium underline";
-    if (external) {
-      a.target = "_blank";
-      a.rel = "noreferrer noopener";
+    a.target = "_blank";
+    a.rel = rel;
+    if (full) {
+      const note = () => noteFullAnalysis(browserNotes(), home.address, Date.now());
+      a.addEventListener("click", note);
+      a.addEventListener("auxclick", note);
     }
     links.appendChild(a);
   }
