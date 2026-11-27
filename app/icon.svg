@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Renoflip's tab icon: a white "r" and the wordmark's lime full stop on the deep green. -->
+  <rect width="32" height="32" rx="7" fill="#153D35"/>
+  <rect x="8.5" y="9.5" width="4.6" height="13.5" rx="1" fill="#FFFFFF"/>
+  <path d="M13.1 15.2C14 11.6 16.6 9.6 21 9.7V14.3C17.6 14.2 14.6 15.3 13.1 18.4Z" fill="#FFFFFF"/>
+  <circle cx="23.2" cy="21" r="2.6" fill="#E2F5B1"/>
+</svg>

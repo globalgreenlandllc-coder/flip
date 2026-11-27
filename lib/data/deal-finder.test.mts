@@ -148,7 +148,7 @@ test("a home's own last sale is not one of its comps, whatever id its record has
   assert.ok(taken.point < a.screen.arv!.point, `${taken.point} with its own sale, ${a.screen.arv!.point} without`);
 });
 
-test("where more are for sale or sold than flip reads, a part is read and said to be a part: three lookups a zip code at most", async () => {
+test("where more are for sale or sold than Renoflip reads, a part is read and said to be a part: three lookups a zip code at most", async () => {
   const many = Array.from({ length: 1_100 }, (_, i) => listing(1_000 + i, { asking: 400_000, north: (i % 30) * 0.02 }));
   const t = finder(soldHomes(1_600, { start: 3_000, withinMiles: 1 }), many);
   const answer = await t.f.find(SEARCH, "ann");
@@ -216,7 +216,7 @@ test("the budget used up: the zip code is not searched, the person is told when 
   const answer = await t.f.find({ ...SEARCH, zips: ["98000", "98001"] }, "ann");
   // The homes for sale were read; the sold homes could not be: the zip code is not valued on half its data.
   assert.deepEqual(answer.areas.map((a) => a.status), ["budget", "budget"]);
-  assert.match(answer.areas[0].message!, /^flip's real sold-price lookups are used up for now; more open up on December 11, so 98000 could not be searched\.$/);
+  assert.match(answer.areas[0].message!, /^Renoflip's real sold-price lookups are used up for now; more open up on December 11, so 98000 could not be searched\.$/);
   assert.deepEqual([answer.homes.length, t.api.calls.length], [0, 1]);
   assert.deepEqual(answer.lookups, { used: 1, of: 1, mine: 1, myShare: 30 });
 
@@ -277,7 +277,7 @@ test("turned away, the zip code is named", async () => {
   const t = finder(records, forSale);
   t.api.fail = { status: 403 };
   const answer = await t.f.find(SEARCH, "ann");
-  assert.match(answer.areas[0].message!, /^The service flip reads homes for sale from turned flip away, so 98000 could not be searched\./);
+  assert.match(answer.areas[0].message!, /^The service Renoflip reads homes for sale from turned Renoflip away, so 98000 could not be searched\./);
 });
 
 test("a home that cannot be valued says which: nothing of its size sold near it, or sales left out for what differs", async () => {

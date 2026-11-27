@@ -182,7 +182,7 @@ export async function admit(store: UsageStore, limits: UsageLimits, run: { userI
   } else if (counts.dayAll > limits.dailyAnalysesAll) {
     refusal = {
       reason: "daily",
-      message: "flip has reached today's limit on analyses for everyone in the beta. It opens again tomorrow. Quick numbers and your saved deals still work.",
+      message: "Renoflip has reached today's limit on analyses for everyone in the beta. It opens again tomorrow. Quick numbers and your saved deals still work.",
       retryAfterSeconds: Math.ceil((nextDayStart(at).getTime() - at.getTime()) / 1000),
     };
   }

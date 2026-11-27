@@ -1,6 +1,9 @@
-# flip
+# flip (Renoflip)
 
 Address in. **GO / TIGHT / PASS** out, with the numbers that back it up.
+
+The product is called **Renoflip** (renoflip.app) since 2026-11-27; the repository, the code, the settings
+(`FLIP_*`) and this README still say flip. Every word a person reads in the app says Renoflip.
 
 flip is a deal evaluator for people who buy houses, renovate them, and sell
 them: contractors, small investors, and the agents and lenders who serve
@@ -53,12 +56,30 @@ returns a JSON 401.
 | Route | What |
 |---|---|
 | `/` | Landing page |
-| `/sign-in`, `/sign-up` | Clerk |
-| `/app` | New analysis: listing link + photos → verdict, remodel plan, report |
-| `/app/deals`, `/app/deals/[id]` | Saved deals per user |
+| `/sign-in`, `/sign-up` | Clerk, inside flip's own panel |
+| `/app` | Overview: a listing box ("Analyze property"), this month's numbers, the latest saved deals, what to check |
+| `/app/analyze` | New analysis: listing link + photos → verdict, remodel plan, report |
+| `/app/deals`, `/app/deals/[id]` | Saved deals per user: cards with search and verdict filters; one deal's result |
+| `/app/find` | Deal finder |
 | `/app/quick` | Deal math without photos |
+| `/app/extension` | The Chrome extension and the bookmark |
 | `POST /api/v1/analyze` | Listing URL and/or photos → assessment, plan, report |
 | `POST /api/v1/evaluate` | Facts + deal terms → report |
+
+Links made before the analysis had its own address (the extension's button, the bookmark, the deal finder) carry
+their listing in the query string to `/app`; `/app` forwards any such link to `/app/analyze` with the same query.
+
+### The look
+
+The green design of 2026-11-27 (the owner's, made outside this repo): deep green `#153D35`, ink `#162E28`, lime
+`#E2F5B1`, canvas `#F5F7F6`, lines `#E4E9E6`, and Plus Jakarta Sans, kept with the app in `app/fonts/` (SIL Open
+Font License, `app/fonts/OFL.txt`) so nothing is fetched to build or show it. The colours are the theme tokens in
+`app/globals.css`, under the names the screens already used (`ink-*`, `brand-*`, `go`, `tight`, `pass`); line icons
+are `components/ui/icon.tsx`. The landing and sign-in photos are Unsplash photos (`public/brand/CREDITS.md`). A
+result reads the same wherever it is shown (`components/report/result-view.tsx`): the house, its photos (the
+person's own uploads only: flip neither keeps nor shows listing photos), the verdict card, the asking price beside
+the most to offer, then Overview, Renovation plan, Comparable sales and Risk check. Every DEMO and UNTESTED mark,
+and every line saying where a fact came from, is where the report had it.
 
 Try the API as a signed-in user (session token as a Bearer):
 
@@ -436,7 +457,7 @@ its real data could not be had. All of it keeps to one clock of 100 seconds
 from the moment it is asked: a home it cannot start in time is skipped, and
 says so.
 
-**Into the full analysis.** "Full analysis" opens `/app` in a new tab (the
+**Into the full analysis.** "Full analysis" opens `/app/analyze` in a new tab (the
 search stays where it is) with the home's address, asking price, size and
 rooms filled in (`from=finder`, `lib/listing/prefill.ts`), marked as filled
 in from a deal finder link (the browser's word for it, like a pasted page),

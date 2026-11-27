@@ -44,5 +44,5 @@ export function analyzeHref(home: Pick<MapHome, "address" | "price" | "beds" | "
   if (home.beds !== null) params.set("beds", String(home.beds));
   if (home.baths !== null) params.set("baths", String(home.baths));
   if (home.sqft !== null) params.set("sqft", String(home.sqft));
-  return `/app?${params.toString()}`;
+  return `/app/analyze?${params.toString()}`;
 }

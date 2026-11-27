@@ -1,15 +1,12 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 import type { DealPayload } from "@/lib/deals";
-import { VerdictBadge } from "@/components/ui/verdict";
-import { DemoBanner, UntestedBanner } from "@/components/ui/demo";
 import { isDemoProvider, isUntestedProvider } from "@/lib/data/demo";
-import { ReportView, WithheldNote, money } from "@/components/report/report-view";
-import { PlanView } from "@/components/report/plan-view";
-import { AssessmentView, ListingCard } from "@/components/report/assessment-view";
+import { ResultView } from "@/components/report/result-view";
 import { DeleteDealButton } from "@/components/app/delete-deal-button";
+import { money } from "@/components/ui/format";
+import { AREA_TIME_ZONE } from "@/lib/area";
 
 export const dynamic = "force-dynamic";
 
@@ -23,35 +20,26 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
   const demo = isDemoProvider(deal.provider);
   const untested = isUntestedProvider(deal.provider);
   const quick = !payload.assessment;
+  const saved = deal.createdAt.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: AREA_TIME_ZONE });
 
   return (
-    <div className="space-y-8">
-      <div>
-        <Link href="/app/deals" className="text-sm text-ink-500 hover:text-ink-950">← Deals</Link>
-        <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">{deal.title}</h1>
-            <p className="mt-1 text-sm text-ink-500">
-              Asking {money(deal.askingPrice)} · saved {deal.createdAt.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
-            </p>
-          </div>
-          <DeleteDealButton id={deal.id} />
-        </div>
-      </div>
-
-      {demo && <DemoBanner kind={quick ? "quick" : "analysis"} />}
-      {untested && <UntestedBanner />}
-
-      <div className="card flex flex-wrap items-center gap-4 p-5">
-        <VerdictBadge verdict={payload.report.deal.verdict} size="lg" demo={demo} untested={untested} />
-        <p className="flex-1 basis-80 text-lg leading-snug">{payload.report.deal.decidingFactor}</p>
-      </div>
-      <WithheldNote reasons={payload.report.deal.withheld} />
-
-      {payload.listing && <ListingCard listing={payload.listing} />}
-      {payload.assessment && <AssessmentView assessment={payload.assessment} />}
-      {payload.plan && <PlanView plan={payload.plan} demo={demo} untested={untested} />}
-      <ReportView report={payload.report} hideVerdict demo={demo} untested={untested} sources={payload.subjectSources} conditionFrom={quick ? "record" : "photos"} data={untested ? payload.data : undefined} />
-    </div>
+    <ResultView
+      report={payload.report}
+      plan={payload.plan}
+      assessment={payload.assessment}
+      listing={payload.listing}
+      demo={demo}
+      untested={untested}
+      sources={payload.subjectSources}
+      data={untested ? payload.data : undefined}
+      conditionFrom={quick ? "record" : "photos"}
+      title={deal.title}
+      titleAs="h1"
+      // Quick numbers has no listing: its price is the one typed.
+      priceWhat={quick && deal.source === null ? "The price you entered" : undefined}
+      subtitle={`Asking ${money(deal.askingPrice)} · saved ${saved}${quick ? " · quick numbers, no photos" : ""}`}
+      back={{ href: "/app/deals", label: "Back to my deals" }}
+      actions={<DeleteDealButton id={deal.id} />}
+    />
   );
 }

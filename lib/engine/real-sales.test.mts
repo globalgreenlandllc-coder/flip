@@ -277,7 +277,7 @@ test("a GO is withheld in an area that has not passed the accuracy test, and the
   const gated = withGate(go, { areaTested: false });
   assert.equal(gated.deal.verdict, "CHECK FIRST");
   assert.deepEqual(gated.deal.withheld?.map((r) => r.code), ["AREA_UNTESTED"]);
-  assert.match(gated.deal.decidingFactor, /^The numbers work at this price: asking is \$[\d,]+ under the max offer.*It is not a GO yet: flip's resale estimate has not been tested against real completed flips in this area yet\.$/);
+  assert.match(gated.deal.decidingFactor, /^The numbers work at this price: asking is \$[\d,]+ under the max offer.*It is not a GO yet: Renoflip's resale estimate has not been tested against real completed flips in this area yet\.$/);
   assert.match(gated.narrative[0], /^VERDICT: CHECK FIRST\. The numbers work/);
   assert.deepEqual(gated.narrative.slice(1), go.narrative.slice(1));
   // Nothing but the verdict and its sentence changed.

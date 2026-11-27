@@ -21,9 +21,10 @@ export default async function QuickNumbersPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Quick numbers</h1>
-        <p className="mt-1 text-ink-700">No photos, just the deal math with a condition-tier rehab estimate. Change any assumption and re-run.</p>
+      <div className="mb-7">
+        <p className="eyebrow mb-2.5">A quick sanity check</p>
+        <h1 className="page-title">Run the numbers.</h1>
+        <p className="page-lede max-w-2xl">No photos, no address: the deal math on the demo house, with the renovation priced from its condition. Change a number and run it again to see what moves the profit.</p>
       </div>
       <Evaluator initial={initial} initialProvider={providers.name} />
     </div>

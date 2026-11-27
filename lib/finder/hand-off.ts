@@ -1,10 +1,11 @@
 /**
- * "Full analysis" in the deal finder opens a home's analysis in a new tab, and the analysis starts by itself.
+ * "Full analysis" in the deal finder, and "Analyze property" in the Overview's box, open the analysis and it starts
+ * by itself.
  *
  * What says it should start is not in the link: a link can be reloaded, gone back to, opened twice or sent by
- * anyone, and a run costs one of the person's analyses. It is a note this browser keeps for two minutes: the finder
- * writes it when the link is clicked, and the analysis page takes it, once (components/analyzer.tsx). A page that
- * finds no note fills the form and waits for the button.
+ * anyone, and a run costs one of the person's analyses. It is a note this browser keeps for two minutes, keyed by the
+ * home's address (the finder) or the listing link (the Overview): written when the button is pressed, taken by the
+ * analysis page, once (components/analyzer.tsx). A page that finds no note fills the form and waits for the button.
  *
  * Each home's note is a storage entry of its own, written and taken alone: tabs opened together never write back a
  * note another tab has taken.
