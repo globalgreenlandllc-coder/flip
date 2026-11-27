@@ -37,7 +37,7 @@ const miles = (n: number) => `${n} mile${n === 1 ? "" : "s"}`;
 export function Stat({ label, value, sub, tone, demo = false }: { label: string; value: string; sub?: string; tone?: "good" | "bad"; demo?: boolean }) {
   return (
     <div className="rounded-xl border border-ink-200 bg-white p-4">
-      <div className="flex items-center justify-between gap-2 text-xs font-medium text-[#78867e]">
+      <div className="flex items-center justify-between gap-2 text-xs font-medium text-[#67717a]">
         {label}
         {demo && <DemoTag />}
       </div>
@@ -64,7 +64,7 @@ export function Block({ title, children, aside, demo = false, lede }: { title: s
 }
 
 const TH = "px-3 py-2.5 font-semibold";
-const THEAD = "bg-[#f7f9f7] text-left text-[11px] uppercase tracking-wide text-ink-500";
+const THEAD = "bg-[#f7f7f3] text-left text-[11px] uppercase tracking-wide text-ink-500";
 
 /**
  * Why a GO was withheld and what would clear it (lib/engine/gate.ts). Shown
@@ -298,8 +298,8 @@ export function DealTable({ report, demo = false }: { report: Report; demo?: boo
   const total = Math.max(1, deal.purchasePrice + deal.rehabWithReserve + deal.holdingCost + deal.financingCost + deal.closingBuy + deal.closingSell);
   const parts = [
     { label: "Purchase", value: deal.purchasePrice, colour: "bg-ink-950" },
-    { label: "Renovation", value: deal.rehabWithReserve, colour: "bg-[#5d8f6f]" },
-    { label: "Other costs", value: deal.holdingCost + deal.financingCost + deal.closingBuy + deal.closingSell, colour: "bg-[#c6d4cb]" },
+    { label: "Renovation", value: deal.rehabWithReserve, colour: "bg-[#ff6a3d]" },
+    { label: "Other costs", value: deal.holdingCost + deal.financingCost + deal.closingBuy + deal.closingSell, colour: "bg-[#cdd2cf]" },
   ];
   return (
     <Block title="The full picture" demo={demo}>
@@ -312,7 +312,7 @@ export function DealTable({ report, demo = false }: { report: Report; demo?: boo
         <div className="my-2 border-t border-ink-200" />
         <Row k="Total project cost" v={money(deal.totalCost)} bold />
         <Row k="Resale value (ARV)" v={money(deal.arv)} />
-        <div className={`mt-3 flex items-center justify-between rounded-xl px-4 py-3 ${deal.profit < 0 ? "bg-[#fbeceb]" : "bg-[#eef4e6]"}`}>
+        <div className={`mt-3 flex items-center justify-between rounded-xl px-4 py-3 ${deal.profit < 0 ? "bg-[#fbeceb]" : "bg-[#fff1ea]"}`}>
           <span className="text-sm font-bold text-ink-900">Profit at the asking price</span>
           <span className={`tabular text-2xl font-bold tracking-tight ${deal.profit < 0 ? "text-pass" : "text-ink-950"}`}>{money(deal.profit)}</span>
         </div>
@@ -365,7 +365,7 @@ export function Sensitivity({ report, demo = false }: { report: Report; demo?: b
             ))}
           </tbody>
         </table>
-        <p className={`mt-3 rounded-lg px-3 py-2 text-sm ${deal.worstCaseProfit < 0 ? "bg-[#fbeceb] text-pass" : "bg-[#eef4e6] text-ink-900"}`}>
+        <p className={`mt-3 rounded-lg px-3 py-2 text-sm ${deal.worstCaseProfit < 0 ? "bg-[#fbeceb] text-pass" : "bg-[#fff1ea] text-ink-900"}`}>
           Resale 10% lower and the work 20% over: <span className="tabular font-bold">{money(deal.worstCaseProfit)}</span>
         </p>
       </div>

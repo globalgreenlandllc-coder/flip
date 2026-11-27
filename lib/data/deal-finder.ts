@@ -160,13 +160,13 @@ function areaMessage(status: AreaStatus, zip: string, opensAt?: Date): string | 
   const opens = opensAt ? `; more open up on ${longDate(opensAt)}` : "";
   switch (status) {
     case "budget":
-      return `Renoflip's real sold-price lookups are used up for now${opens}, so ${zip} could not be searched.`;
+      return `RenoFlip's real sold-price lookups are used up for now${opens}, so ${zip} could not be searched.`;
     case "your-share":
       return `You have used your share of real sold-price lookups for now${opens}, so ${zip} could not be searched.`;
     case "unavailable":
-      return `The service Renoflip reads homes for sale from did not answer for ${zip} just now. Search again in a few minutes.`;
+      return `The service RenoFlip reads homes for sale from did not answer for ${zip} just now. Search again in a few minutes.`;
     case "refused":
-      return `The service Renoflip reads homes for sale from turned Renoflip away, so ${zip} could not be searched. That is ours to fix, and searching again will not help until it is.`;
+      return `The service RenoFlip reads homes for sale from turned RenoFlip away, so ${zip} could not be searched. That is ours to fix, and searching again will not help until it is.`;
     case "late":
       return `The search ran out of time before ${zip} was read in full. Search again to include it: what was read is kept.`;
     case "not-kept":

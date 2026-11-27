@@ -46,6 +46,8 @@ export interface ResultViewProps {
   /** Quick numbers: the renovation figure the person typed, when they typed one; the deal used it instead of the
    *  condition's estimate. */
   rehabTyped?: number | null;
+  /** Quick numbers: the person typed the profit target, so it is called theirs. A full analysis uses the default. */
+  targetSet?: boolean;
   /** What the price beside "most you could offer" is: the listing's asking price, or the price typed in Quick numbers. */
   priceWhat?: string;
   /** Save, delete: whatever the page offers, top right. */
@@ -81,7 +83,7 @@ function PhotoPanel({ previews, photosUsed, assessment, conditionFrom }: { previ
   if (previews && previews.length > 0) {
     const current = previews[Math.min(shown, previews.length - 1)];
     return (
-      <div className="relative min-h-[260px] overflow-hidden rounded-[15px] bg-ink-100" data-photo-panel="photos">
+      <div className="relative min-h-[300px] overflow-hidden rounded-[15px] bg-ink-100" data-photo-panel="photos">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={current} alt="One of your photos of this house" className="absolute inset-0 h-full w-full object-cover" />
         <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-md bg-white/95 px-2.5 py-1.5 text-xs font-bold text-ink-900">
@@ -109,72 +111,146 @@ function PhotoPanel({ previews, photosUsed, assessment, conditionFrom }: { previ
     );
   }
   return (
-    <div className="relative flex min-h-[260px] flex-col justify-end overflow-hidden rounded-[15px] bg-gradient-to-br from-[#e9f1e7] via-[#dce8d9] to-[#c9dbc5] p-6" data-photo-panel="none">
+    <div className="relative flex min-h-[300px] flex-col justify-end overflow-hidden rounded-[15px] bg-gradient-to-br from-[#f3f1ec] via-[#e6e3dc] to-[#d7d3ca] p-6" data-photo-panel="none">
       <Icon name="home" className="absolute -right-6 -top-4 h-56 w-56 text-white/55" strokeWidth={1} />
       <div className="relative">
-        <p className="eyebrow text-[#5f7b55]">{conditionFrom === "photos" ? "Read from the photos" : "No photos read"}</p>
+        <p className="eyebrow text-[#b9411d]">{conditionFrom === "photos" ? "Read from the photos" : "No photos read"}</p>
         <p className="mt-2 max-w-sm text-lg font-bold leading-snug tracking-tight text-ink-900">
           {conditionFrom === "photos" && assessment
             ? `${assessment.overallCondition[0].toUpperCase()}${assessment.overallCondition.slice(1)} condition${read ? `, from ${read} photo${read === 1 ? "" : "s"}` : ""}.`
             : "The condition comes from the property record."}
         </p>
-        <p className="mt-1.5 max-w-sm text-sm text-ink-700">Room by room, and what to fix, under Renovation plan.</p>
+        <p className="mt-1.5 max-w-sm text-sm text-ink-700">Room by room, and what to fix, under Renovation budget.</p>
       </div>
     </div>
   );
 }
 
-/** The dark green card: the verdict, what is left at the asking price, and the three numbers it rests on. */
-function VerdictCard({ report, demo, untested }: { report: Report; demo: boolean; untested: boolean }) {
+/**
+ * The target the most-to-offer was solved for, in words: the amount the deal used (a full analysis always uses the
+ * default; Quick numbers the one typed, which is the person's). A deal saved before the target was kept says only
+ * "the profit target".
+ */
+function targetWords(deal: Report["deal"], targetSet: boolean): { the: string; offerFor: string } {
+  const t = deal.targetProfit;
+  if (typeof t !== "number") return { the: "the profit target", offerFor: "for the profit target" };
+  return targetSet ? { the: `your ${money(t)} target`, offerFor: `for your ${money(t)} profit target` } : { the: `the ${money(t)} target`, offerFor: `for a ${money(t)} profit` };
+}
+
+/**
+ * The heading of the decision, in plain words, from the verdict and the numbers behind it. TIGHT has two meanings
+ * (lib/engine/deal.ts): the target is met but the downside is not, or there is profit short of the target. On demo
+ * numbers the heading says so.
+ */
+function decisionHeading(deal: Report["deal"], demo: boolean, targetSet: boolean): string {
+  const { the } = targetWords(deal, targetSet);
+  const t = deal.targetProfit;
+  let text: string;
+  if (deal.verdict === "GO") text = `The deal meets ${the} and holds on the downside.`;
+  else if (deal.verdict === "PASS") text = "Not at this price: it loses money.";
+  else if (deal.verdict === "TIGHT") {
+    const metTarget = typeof t === "number" ? deal.profit >= t : deal.worstCaseProfit > 0 ? false : null;
+    text = metTarget === true ? `It meets ${the}, but not on the downside.` : metTarget === false ? `Profitable, but short of ${the}.` : "A thin deal at this price.";
+  } else text = "The numbers work. Something is still open.";
+  return demo ? `On demo numbers: ${text[0].toLowerCase()}${text.slice(1)}` : text;
+}
+
+/**
+ * The purchase decision (the design's Deal Studio card): the verdict, the profit left at the asking price, the most to
+ * offer, the renovation, the resale value and the downside, and the profit margin (profit ÷ resale value). Every figure
+ * is the report's own; in a demo each one carries DEMO.
+ */
+function VerdictCard({ report, demo, untested, targetSet }: { report: Report; demo: boolean; untested: boolean; targetSet: boolean }) {
   const { deal, arv } = report;
+  const { offerFor } = targetWords(deal, targetSet);
+  // Below zero, no price reaches the target: said in words, never as a negative price.
+  const noPrice = deal.maxAllowableOffer < 0;
   const label = demo ? "Demo numbers" : untested ? "Real sold prices · untested estimate" : "Estimate";
+  const margin = arv.point > 0 ? `${((deal.profit / arv.point) * 100).toFixed(1)}%` : "—";
   return (
-    <div className="relative flex flex-col justify-between overflow-hidden rounded-[15px] bg-ink-950 p-6 text-white sm:p-7" data-verdict-card>
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="rounded-[14px] border border-ink-200 bg-white p-5 sm:p-7" data-verdict-card>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-500">Your purchase decision</p>
+          <p className="mt-2 text-[22px] font-bold leading-snug tracking-[-0.035em] text-ink-950 sm:text-[26px]" data-decision-heading>
+            {decisionHeading(deal, demo, targetSet)}
+          </p>
+        </div>
         <VerdictPill verdict={deal.verdict} demo={demo} untested={untested} />
-        <span className="text-xs text-[#b2cbc0]">{label}</span>
       </div>
-      <div className="mt-6">
-        <p className="text-[13px] font-semibold text-[#bed2c8]">Profit at the asking price, before tax</p>
-        <p className={`tabular mt-1 text-[44px] font-bold leading-none tracking-[-0.04em] sm:text-5xl ${deal.profit < 0 ? "text-[#f4c7c2]" : "text-white"}`} data-verdict-profit>
-          {money(deal.profit)}
-          {demo && <DemoTag className="ml-3 align-middle" />}
+      {/* The design's four-number row: the most to offer in the dark cell, then profit, margin and the renovation. */}
+      <div className="mt-6 grid grid-cols-2 overflow-hidden rounded-[10px] border border-[#dce4de] bg-[#f4f7f3] lg:grid-cols-4">
+        <div className="flex min-w-0 flex-col gap-2 bg-ink-950 p-4 text-white sm:p-5" data-card-row="Most you could offer">
+          <span className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-[#c3ccd0]">
+            Maximum buy price
+            {demo && <DemoTag />}
+          </span>
+          <strong className="tabular text-[26px] font-bold leading-tight tracking-[-0.05em] sm:text-[34px]">{noPrice ? "None" : money(deal.maxAllowableOffer)}</strong>
+          <small className="text-xs text-[#c3ccd0]">{noPrice ? `No price works ${offerFor}` : offerFor[0].toUpperCase() + offerFor.slice(1)}</small>
+        </div>
+        <div className="flex min-w-0 flex-col gap-2 border-l border-[#dce4de] p-4 sm:p-5">
+          <span className="text-sm font-semibold text-ink-700">Potential net profit</span>
+          <strong className={`tabular text-[26px] font-bold leading-tight tracking-[-0.05em] sm:text-[34px] ${deal.profit < 0 ? "text-pass" : "text-ink-950"}`} data-verdict-profit>
+            {money(deal.profit)}
+            {demo && <DemoTag className="ml-2 align-middle" />}
+          </strong>
+          <small className="text-xs text-ink-500">{Number.isNaN(deal.roi) ? "At the asking price, after every project cost, before tax" : `At the asking price, after every project cost, before tax. ${Math.round(deal.roi * 100)}% return on the cash you put in.`}</small>
+        </div>
+        <div className="flex min-w-0 flex-col gap-2 border-t border-[#dce4de] p-4 sm:p-5 lg:border-l lg:border-t-0">
+          <span className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-ink-700">
+            Profit margin
+            {demo && <DemoTag />}
+          </span>
+          <strong className="tabular text-[26px] font-bold leading-tight tracking-[-0.05em] text-ink-950 sm:text-[34px]" data-profit-margin>
+            {margin}
+          </strong>
+          <small className="text-xs text-ink-500">Profit ÷ resale value</small>
+        </div>
+        <div className="flex min-w-0 flex-col gap-2 border-l border-t border-[#dce4de] p-4 sm:p-5 lg:border-t-0" data-card-row="Renovation + reserve">
+          <span className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-ink-700">
+            Renovation + reserve
+            {demo && <DemoTag />}
+          </span>
+          <strong className="tabular text-[26px] font-bold leading-tight tracking-[-0.05em] text-ink-950 sm:text-[34px]">{money(deal.rehabWithReserve)}</strong>
+          <small className="text-xs text-ink-500">The work and a reserve for what photos cannot show</small>
+        </div>
+      </div>
+      {/* Under the row, as the design's line under its numbers: the downside, and what the value rests on. */}
+      <dl className="mt-4 grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-[auto_auto_1fr]">
+        <div className="flex flex-wrap items-baseline gap-x-2" data-card-row="Downside profit">
+          <dt className="flex items-center gap-1.5 text-ink-700">
+            <Icon name="info" className="h-4 w-4 text-ink-500" />
+            Downside profit (resale 10% lower, the work 20% higher)
+            {demo && <DemoTag />}
+          </dt>
+          <dd className={`tabular font-bold ${deal.worstCaseProfit < 0 ? "text-pass" : "text-ink-950"}`}>{money(deal.worstCaseProfit)}</dd>
+        </div>
+        <div className="flex flex-wrap items-baseline gap-x-2" data-card-row="Resale value">
+          <dt className="flex items-center gap-1.5 text-ink-700">
+            Resale value
+            {demo && <DemoTag />}
+          </dt>
+          <dd className="tabular font-bold text-ink-950">{money(arv.point)}</dd>
+        </div>
+        <p className="text-xs text-ink-500 sm:text-right">
+          {label} · buying and selling costs, loan interest and holding costs included
         </p>
-        <p className="mt-2 text-[13px] text-[#c0d5c8]">{Number.isNaN(deal.roi) ? "Before income tax." : `${Math.round(deal.roi * 100)}% return on the cash you put in. Before income tax.`}</p>
-      </div>
-      <div className="mt-6 grid grid-cols-3 gap-3 border-t border-white/15 pt-5">
-        {[
-          { k: "Resale value", v: arv.point },
-          { k: "Renovation", v: deal.rehabWithReserve },
-          { k: "Most to offer", v: deal.maxAllowableOffer },
-        ].map((m) => (
-          <div key={m.k} className="min-w-0">
-            <p className="flex flex-wrap items-center gap-1.5 text-xs text-[#aac4b7]">
-              {m.k}
-              {demo && <DemoTag />}
-            </p>
-            <p className="tabular mt-1.5 truncate text-lg font-semibold tracking-tight sm:text-[21px]">{money(m.v)}</p>
-          </div>
-        ))}
-      </div>
-      <p className="mt-4 flex items-center gap-2 text-xs text-[#b9ceb9]">
-        <Icon name="shield" className="h-4 w-4" />
-        Includes buying and selling costs, loan interest, holding costs and a reserve for what photos cannot show.
-      </p>
+      </dl>
     </div>
   );
 }
 
 /** The asking price and the most you could offer, side by side. The most to offer is built on the resale value, so
  *  in a demo it is as made up as that and says so. */
-function PriceBar({ report, demo, priceWhat }: { report: Report; demo: boolean; priceWhat: string }) {
+function PriceBar({ report, demo, priceWhat, targetSet }: { report: Report; demo: boolean; priceWhat: string; targetSet: boolean }) {
   const { deal } = report;
+  const { offerFor } = targetWords(deal, targetSet);
   const gap = Math.round(deal.askingVsMao);
   const above = gap > 0;
   return (
     <div className="card flex flex-wrap items-center gap-x-8 gap-y-3 px-5 py-4" data-price-bar>
       <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#eef3ee] text-ink-950">
+        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#fff1ea] text-[#c8431f]">
           <Icon name="home" className="h-5 w-5" />
         </span>
         <div>
@@ -185,11 +261,17 @@ function PriceBar({ report, demo, priceWhat }: { report: Report; demo: boolean; 
       </div>
       <div className="flex flex-wrap items-center gap-3 sm:ml-auto">
         <p className="text-sm text-ink-500">
-          Most you could offer for the target profit <span className="tabular font-bold text-ink-900" data-price-mao>{money(deal.maxAllowableOffer)}</span>
+          {deal.maxAllowableOffer < 0 ? (
+            <span data-price-mao>No price works {offerFor}</span>
+          ) : (
+            <>
+              Most you could offer {offerFor} <span className="tabular font-bold text-ink-900" data-price-mao>{money(deal.maxAllowableOffer)}</span>
+            </>
+          )}
           {demo && <DemoTag className="ml-2 align-middle" />}
         </p>
-        <span className={`rounded-md px-2.5 py-1 text-xs font-bold ${above ? "bg-[#fbeceb] text-pass" : "bg-[#eef4e6] text-go"}`}>
-          {gap === 0 ? "The price is just that" : `The price is ${money(Math.abs(gap))} ${above ? "above" : "below"} it`}
+        <span className={`rounded-md px-2.5 py-1 text-xs font-bold ${above ? "bg-[#fbeceb] text-pass" : "bg-[#fff1ea] text-go"}`}>
+          {deal.maxAllowableOffer < 0 ? "Not at any price" : gap === 0 ? "The price is just that" : `The price is ${money(Math.abs(gap))} ${above ? "above" : "below"} it`}
         </span>
       </div>
     </div>
@@ -219,7 +301,7 @@ function Tabs({ id, tabs, active, onChange }: { id: string; tabs: { key: TabKey;
             onChange(next.key);
             document.getElementById(`${id}-${next.key}`)?.focus();
           }}
-          className={`-mb-px flex items-center whitespace-nowrap border-b-2 px-0.5 pb-3.5 text-sm font-semibold transition-colors ${active === t.key ? "border-ink-950 text-ink-950" : "border-transparent text-[#8c978f] hover:text-ink-900"}`}
+          className={`-mb-px flex items-center whitespace-nowrap border-b-2 px-0.5 pb-3.5 text-sm transition-colors ${active === t.key ? "border-orange font-bold text-ink-950" : "border-transparent font-medium text-ink-500 hover:text-ink-900"}`}
         >
           {t.label}
           {typeof t.count === "number" && t.count > 0 && <span className="ml-1.5 rounded bg-[#fff0d8] px-1.5 py-0.5 text-xs text-[#aa792b]">{t.count}</span>}
@@ -230,8 +312,8 @@ function Tabs({ id, tabs, active, onChange }: { id: string; tabs: { key: TabKey;
 }
 
 /**
- * One analysis, as the design lays it out: the house, its photos and the verdict card, the asking price beside the
- * most to offer, then Overview, Renovation plan, Comparable sales and Risk check. Every honesty mark the report
+ * One analysis, as the design lays it out: the house, its photos and the purchase decision, the asking price beside
+ * the most to offer, then Overview, Renovation plan, Comparable sales and Risk check. Every honesty mark the report
  * carries (DEMO, UNTESTED, where each fact came from) is kept where it was.
  */
 export function ResultView(p: ResultViewProps) {
@@ -249,10 +331,10 @@ export function ResultView(p: ResultViewProps) {
   // was given (lib/engine/evaluate.ts, REHAB_FROM_CONDITION), so a saved deal knows it too, without the figure itself.
   const rehabGiven = typeof p.rehabTyped === "number" || !report.riskFlags.some((f) => f.code === "REHAB_FROM_CONDITION");
   const tabs: { key: TabKey; label: string; count?: number }[] = [
-    { key: "overview", label: "Overview" },
-    { key: "plan", label: "Renovation plan" },
-    { key: "comps", label: "Comparable sales" },
-    { key: "risk", label: "Risk check", count: report.riskFlags.length },
+    { key: "overview", label: "Full deal math" },
+    { key: "plan", label: "Renovation budget" },
+    { key: "comps", label: "Resale & comps" },
+    { key: "risk", label: "Property checks", count: report.riskFlags.length },
   ];
 
   return (
@@ -280,12 +362,9 @@ export function ResultView(p: ResultViewProps) {
 
       {demo ? <DemoBanner kind={p.conditionFrom === "record" ? "quick" : "analysis"} why={p.fallbackWhy} /> : untested ? <UntestedBanner /> : null}
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.05fr_1fr]">
-        <PhotoPanel previews={p.previews} photosUsed={p.photosUsed} assessment={p.assessment} conditionFrom={p.conditionFrom} />
-        <VerdictCard report={report} demo={demo} untested={untested} />
-      </div>
+      <VerdictCard report={report} demo={demo} untested={untested} targetSet={p.targetSet ?? false} />
 
-      <PriceBar report={report} demo={demo} priceWhat={p.priceWhat ?? "What the listing asks"} />
+      <PriceBar report={report} demo={demo} priceWhat={p.priceWhat ?? "What the listing asks"} targetSet={p.targetSet ?? false} />
       <WithheldNote reasons={report.deal.withheld} />
       {differs.map((f, i) => (
         <div key={i} className="flex gap-3 rounded-[14px] border border-[#f0dcb4] bg-[#fff8ea] p-4 text-sm leading-relaxed text-ink-900" data-record-differs>
@@ -294,11 +373,20 @@ export function ResultView(p: ResultViewProps) {
         </div>
       ))}
 
+      <section className="rounded-[14px] border border-ink-200 bg-white p-5 sm:p-7" data-renovation-section>
+        <p className="kicker text-ink-500">See the renovation</p>
+        <h3 className="mt-3 text-[24px] font-bold tracking-[-0.04em] text-ink-950">The numbers. And the house.</h3>
+        <p className="mt-1 text-sm text-ink-500">{p.conditionFrom === "photos" ? "Your photos, and what was read from them; the room-by-room plan is under Renovation budget." : "No photos were read for this one: the condition comes from the property record."}</p>
+        <div className="mt-5">
+          <PhotoPanel previews={p.previews} photosUsed={p.photosUsed} assessment={p.assessment} conditionFrom={p.conditionFrom} />
+        </div>
+      </section>
+
       <Tabs id={tabsId} tabs={tabs} active={tab} onChange={setTab} />
 
       <div {...panel("overview")} className="space-y-8">
-        <div className="flex gap-4 rounded-[14px] border border-[#dfe8d6] bg-[#eef4e6] p-5">
-          <Icon name="sparkle" className="mt-0.5 h-6 w-6 text-[#5f7b55]" />
+        <div className="flex gap-4 rounded-[14px] border border-[#f4d9cd] bg-[#fff1ea] p-5">
+          <Icon name="sparkle" className="mt-0.5 h-6 w-6 text-[#b9411d]" />
           <div>
             <p className="font-bold text-ink-900" data-deciding>
               {report.deal.decidingFactor}

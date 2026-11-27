@@ -75,7 +75,7 @@ export function evaluateDeal(arv: number, d: DealInputs): DealResult {
     decidingFactor = `Hits target at base case but loses $${fmt(-worstCaseProfit)} if ARV drops 10% and rehab runs 20% over.`;
   } else if (base.profit > 0) {
     verdict = "TIGHT";
-    decidingFactor = `Profitable but $${fmt(d.targetProfit - base.profit)} short of your $${fmt(d.targetProfit)} target. Offer $${fmt(mao)} or walk.`;
+    decidingFactor = `Profitable but $${fmt(d.targetProfit - base.profit)} short of the $${fmt(d.targetProfit)} target. Offer $${fmt(mao)} or walk.`;
   } else {
     verdict = "PASS";
     decidingFactor = `Asking is $${fmt(gap)} ABOVE your max offer of $${fmt(mao)}. Projected loss $${fmt(-base.profit)}.`;
@@ -95,6 +95,7 @@ export function evaluateDeal(arv: number, d: DealInputs): DealResult {
     profit: base.profit,
     roi,
     maxAllowableOffer: mao,
+    targetProfit: d.targetProfit,
     askingVsMao: gap,
     sensitivity,
     worstCaseProfit,

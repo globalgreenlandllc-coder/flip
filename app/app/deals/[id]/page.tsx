@@ -37,6 +37,8 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
       titleAs="h1"
       // Quick numbers has no listing: its price is the one typed.
       priceWhat={quick && deal.source === null ? "The price you entered" : undefined}
+      // Quick numbers' target is the one the person typed; a full analysis uses the default.
+      targetSet={quick}
       subtitle={`Asking ${money(deal.askingPrice)} · saved ${saved}${quick ? " · quick numbers, no photos" : ""}`}
       back={{ href: "/app/deals", label: "Back to my deals" }}
       actions={<DeleteDealButton id={deal.id} />}

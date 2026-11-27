@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { NoAnswer, askRentcast, propertyUrl, recordFrom, saleFrom, salesUrl, RENTCAST_BASE_URL } from "./rentcast.ts";
 import { SUBJECT_ADDRESS, fakeRentcast, record, soldHomes, subjectRecord } from "./rentcast-fixtures.mts";
 
-test("a record is reduced to what Renoflip uses, and the owner is not among it", () => {
+test("a record is reduced to what RenoFlip uses, and the owner is not among it", () => {
   const kept = recordFrom(subjectRecord({ garageSpaces: 2 }));
   assert.ok(kept);
   assert.deepEqual(Object.keys(kept).sort(), ["address", "baths", "beds", "county", "garage", "id", "lastSale", "lat", "lng", "lotSqft", "propertyType", "soldOn", "sqft", "yearBuilt", "zip"]);

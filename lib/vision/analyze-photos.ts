@@ -149,7 +149,7 @@ export async function analyzePhotos(photos: PhotoInput[], context: PhotoContext 
   try {
     assessment = format.parse(text);
   } catch (err) {
-    throw new PhotoReadError("The photo reading came back in a form Renoflip could not use. Try again.", true, err);
+    throw new PhotoReadError("The photo reading came back in a form RenoFlip could not use. Try again.", true, err);
   }
   const { usage } = response;
   return {

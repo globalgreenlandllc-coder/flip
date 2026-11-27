@@ -179,10 +179,10 @@ export function Finder({ connected, tiles }: { connected: boolean; tiles: MapTil
           </div>
         </fieldset>
         <div className="flex flex-wrap items-center gap-3 sm:col-span-2 lg:col-span-6">
-          <button type="submit" className="btn-primary" disabled={Boolean(busy) || !connected}>
+          <button type="submit" className="btn-accent" disabled={Boolean(busy) || !connected}>
             Find deals
           </button>
-          <span className="text-xs text-ink-500">A zip code and kind of home not searched today uses 2 or 3 sold-price lookups; the same again today uses none, whatever the prices, profit or repair. Renoflip says what a search may cost before it runs.</span>
+          <span className="text-xs text-ink-500">A zip code and kind of home not searched today uses 2 or 3 sold-price lookups; the same again today uses none, whatever the prices, profit or repair. RenoFlip says what a search may cost before it runs.</span>
         </div>
       </form>
 
@@ -192,7 +192,7 @@ export function Finder({ connected, tiles }: { connected: boolean; tiles: MapTil
             This search may use up to {pending.estimate.upTo} sold-price lookup{pending.estimate.upTo === 1 ? "" : "s"}
             {pending.estimate.zips.length > 1 ? ` (${pending.estimate.zips.map((z) => `${z.zip}: ${z.upTo}`).join(", ")})` : ""}
             {pending.estimate.lookups
-              ? `. In the last 31 days ${pending.estimate.lookups.used} of Renoflip's ${pending.estimate.lookups.of} were used, ${pending.estimate.lookups.mine} of your ${pending.estimate.lookups.myShare} by you`
+              ? `. In the last 31 days ${pending.estimate.lookups.used} of RenoFlip's ${pending.estimate.lookups.of} were used, ${pending.estimate.lookups.mine} of your ${pending.estimate.lookups.myShare} by you`
               : ""}
             . The same search again today will use none.
           </p>
@@ -225,7 +225,7 @@ export function Finder({ connected, tiles }: { connected: boolean; tiles: MapTil
               </span>
               {answer.inRange > homes.length && <span className="block text-xs text-ink-500">Showing the {homes.length.toLocaleString("en-US")} most promising of {answer.inRange.toLocaleString("en-US")}.</span>}
               <span className="block text-xs text-ink-500">
-                {answer.areas.filter((a) => a.status === "ok").map((a) => `${a.zip}: ${a.listings.found} for sale${a.listings.sampled ? " (more were for sale than Renoflip reads at once: these are a part)" : ""}, ${a.sales.usable} sold in the last year${a.sales.sampled ? " (more sold than Renoflip reads at once: a part)" : ""}${a.sales.newestSale ? `, newest sale ${day(a.sales.newestSale)}` : ""}`).join(" · ")}
+                {answer.areas.filter((a) => a.status === "ok").map((a) => `${a.zip}: ${a.listings.found} for sale${a.listings.sampled ? " (more were for sale than RenoFlip reads at once: these are a part)" : ""}, ${a.sales.usable} sold in the last year${a.sales.sampled ? " (more sold than RenoFlip reads at once: a part)" : ""}${a.sales.newestSale ? `, newest sale ${day(a.sales.newestSale)}` : ""}`).join(" · ")}
               </span>
               {answer.lookups && (
                 <span className="block text-xs text-ink-500" data-finder-lookups>
@@ -249,7 +249,7 @@ export function Finder({ connected, tiles }: { connected: boolean; tiles: MapTil
           {confirming && (
             <div className="card space-y-3 p-4 text-sm" data-finder-confirm>
               <p>
-                Renoflip will look at {toCheck.length === 1 ? "this hot home" : `these ${toCheck.length} hot homes`} one by one: each one&apos;s own public record and the homes sold right around it. That uses about 2 lookups a home, up to 5, so about {toCheck.length * 2} to {toCheck.length * 5}
+                RenoFlip will look at {toCheck.length === 1 ? "this hot home" : `these ${toCheck.length} hot homes`} one by one: each one&apos;s own public record and the homes sold right around it. That uses about 2 lookups a home, up to 5, so about {toCheck.length * 2} to {toCheck.length * 5}
                 {left !== null ? `, of the ${left} you have left` : ""}. It works from the search as it was kept, and does not read photos.
               </p>
               <div className="flex gap-2">
@@ -425,7 +425,7 @@ function CheckedLine({ checked }: { checked: NonNullable<FoundHome["checked"]> }
   return (
     <>
       Checked: its own public record, and {search.usable} home{search.usable === 1 ? "" : "s"} sold within {search.radiusMiles} mile{search.radiusMiles === 1 ? "" : "s"} in the last {search.months} months, read {day(search.readAt)}.
-      {search.sampled ? " More had sold than Renoflip reads at once: these are a part." : ""}
+      {search.sampled ? " More had sold than RenoFlip reads at once: these are a part." : ""}
       {search.stoppedEarly ? " The search could not be taken wider this time." : ""}
       {comps.length > 0 && (
         <details className="mt-1">
