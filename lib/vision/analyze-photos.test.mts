@@ -75,8 +75,8 @@ test("a good answer comes back as the assessment, tidied, with what it cost", as
 
 test("an answer that was generated and cannot be used is paid for, whatever was wrong with it", async () => {
   const cases: [Reply, RegExp][] = [
-    [{ status: 200, body: message("I could not produce JSON this time.") }, /came back in a form flip could not use/],
-    [{ status: 200, body: message(JSON.stringify({ ...ASSESSMENT, overallCondition: "sparkling" })) }, /came back in a form flip could not use/],
+    [{ status: 200, body: message("I could not produce JSON this time.") }, /came back in a form Renoflip could not use/],
+    [{ status: 200, body: message(JSON.stringify({ ...ASSESSMENT, overallCondition: "sparkling" })) }, /came back in a form Renoflip could not use/],
     [{ status: 200, body: message("", { content: [], stop_reason: "refusal", stop_details: { type: "refusal", category: null, explanation: "The photos show people." } }) }, /Claude declined to assess these photos: The photos show people\./],
     [{ status: 200, body: message('{"overallCondition":"dat', { stop_reason: "max_tokens" }) }, /Assessment was cut off\. Try fewer photos\./],
     [{ status: 200, body: message("", { content: [] }) }, /returned no structured assessment/],

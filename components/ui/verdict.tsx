@@ -33,8 +33,48 @@ export function VerdictBadge({ verdict, size = "md", demo = false, untested = fa
   if (!mark) return <span className={`inline-block whitespace-nowrap rounded-lg font-bold tracking-wide ${sz.verdict} ${colour}`}>{verdict}</span>;
   return (
     <span {...(demo ? { "data-demo-verdict": "" } : { "data-untested-verdict": "" })} title={mark.title} className="inline-flex items-stretch overflow-hidden whitespace-nowrap rounded-lg font-bold tracking-wide">
-      <span className={`flex items-center bg-ink-950 uppercase tracking-wider ${mark.tone} ${sz.mark}`}>{mark.word}</span>
+      <span className={`flex items-center bg-[#0e2a24] uppercase tracking-wider ${mark.tone} ${sz.mark}`}>{mark.word}</span>
       <span className={`${sz.verdict} ${colour}`}>{verdict}</span>
+    </span>
+  );
+}
+
+/** What each verdict means, in a few words, beside it on the result's card. */
+export const VERDICT_MEANS: Record<Verdict, string> = {
+  GO: "Worth a closer look",
+  TIGHT: "A thin margin",
+  PASS: "Not at this price",
+  "CHECK FIRST": "Check before you offer",
+};
+
+const ON_GREEN: Record<Verdict, string> = {
+  GO: "bg-lime text-ink-950",
+  TIGHT: "bg-[#f6d9a8] text-[#5c3c07]",
+  PASS: "bg-[#f4c7c2] text-[#6b1d16]",
+  "CHECK FIRST": "bg-white text-ink-950",
+};
+
+/**
+ * The verdict on the result's dark green card: the verdict and what it means, with DEMO or UNTESTED as part of the
+ * same pill, never apart from it (as with VerdictBadge).
+ */
+export function VerdictPill({ verdict, demo = false, untested = false }: { verdict: Verdict; demo?: boolean; untested?: boolean }) {
+  const mark = demo ? MARK.demo : untested ? MARK.untested : null;
+  const colour = ON_GREEN[verdict] ?? ON_GREEN["CHECK FIRST"];
+  const means = VERDICT_MEANS[verdict] ?? "";
+  return (
+    <span
+      {...(demo ? { "data-demo-verdict": "" } : untested ? { "data-untested-verdict": "" } : {})}
+      data-verdict={verdict}
+      title={mark?.title}
+      className="inline-flex max-w-full items-stretch overflow-hidden rounded-md text-[13px] font-bold"
+    >
+      {mark && <span className={`flex items-center bg-[#0e2a24] px-2 text-[10px] uppercase tracking-wider ${mark.tone}`}>{mark.word}</span>}
+      <span className={`flex items-center gap-1.5 px-2.5 py-1.5 uppercase tracking-wide ${colour}`}>
+        {verdict === "GO" ? "✓ " : ""}
+        {verdict}
+        {means && <span className="font-semibold normal-case tracking-normal opacity-80">· {means}</span>}
+      </span>
     </span>
   );
 }

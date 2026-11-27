@@ -11,11 +11,7 @@ import type { Prefill } from "@/lib/listing/prefill";
 import { browserNotes, takeFullAnalysisOnce } from "@/lib/finder/hand-off";
 import { analysisStarted, browserRead, formFromPrefill, houseLearned, linkGiven, linkPasted, listingToSend, pagePasted, photoLinksAdded, type HouseForm } from "@/lib/listing/form";
 import { webLink } from "@/lib/listing/house";
-import { ReportView, WithheldNote } from "@/components/report/report-view";
-import { PlanView } from "@/components/report/plan-view";
-import { AssessmentView, ListingCard } from "@/components/report/assessment-view";
-import { VerdictBadge } from "@/components/ui/verdict";
-import { DemoBanner, UntestedBanner } from "@/components/ui/demo";
+import { ResultView } from "@/components/report/result-view";
 import { zillowHref } from "@/components/finder/shared";
 import { isUntestedProvider } from "@/lib/data/demo";
 import type { DataSource } from "@/lib/data/house-data";
@@ -61,12 +57,16 @@ async function toJpeg(file: File, maxEdge = 1280): Promise<{ base64: string; med
   return { base64: dataUrl.slice(dataUrl.indexOf(",") + 1), mediaType: "image/jpeg" };
 }
 
-export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; initialUsage?: UsageSummary | null }) {
+/**
+ * `startLink`: a listing link handed over by the Overview's box (link=), put in the link field. Like a home from
+ * the deal finder, it starts by itself only when this browser holds the note of the click that sent it.
+ */
+export function Analyzer({ prefill, startLink, initialUsage }: { prefill?: Prefill | null; startLink?: string; initialUsage?: UsageSummary | null }) {
   const [usage, setUsage] = useState<UsageSummary | null>(initialUsage ?? null);
   // The link, the photo links, the price and the listing as this browser read it (a pasted
   // page, the button on the listing page, the extension), held as one value because they are
   // about one house: lib/listing/form.ts keeps them that way when the person moves to another.
-  const [house, setHouse] = useState<HouseForm>(() => formFromPrefill(prefill));
+  const [house, setHouse] = useState<HouseForm>(() => (!prefill && startLink ? { ...formFromPrefill(null), link: startLink } : formFromPrefill(prefill)));
   const [showLinks, setShowLinks] = useState(Boolean(prefill?.photos.length));
   const [files, setFiles] = useState<{ file: File; url: string }[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -74,6 +74,11 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
   const [error, setError] = useState<string | null>(null);
   const [blocked, setBlocked] = useState<ListingInfo | null>(null);
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
+  const [previews, setPreviews] = useState<string[]>([]);
+  // The result's photo links are its own (not the form's, which a removed photo releases), and are released when a
+  // new result replaces them or the page goes.
+  const previewLinks = useRef<string[]>([]);
+  useEffect(() => () => previewLinks.current.forEach((u) => URL.revokeObjectURL(u)), []);
   const [extension, setExtension] = useState<string | null>(null);
 
   useEffect(() => {
@@ -82,15 +87,16 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
     return () => { alive = false; };
   }, []);
 
-  // Opened by the deal finder's "Full analysis": the analysis starts by itself, once, when this browser holds the
-  // note of that click, which it takes (lib/finder/hand-off.ts). The home's photos are looked for on the server, by
-  // its address. A reload, Back, a second tab, or a link from anywhere else finds no note: the form is filled and
-  // waits for the button.
+  // Opened by the deal finder's "Full analysis" or the Overview's "Analyze property": the analysis starts by itself,
+  // once, when this browser holds the note of that click, which it takes (lib/finder/hand-off.ts): the finder's note
+  // is the home's address (its photos are looked for on the server by it), the Overview's the link. A reload, Back,
+  // a second tab, or a link from anywhere else finds no note: the form is filled and waits for the button.
   const autoRan = useRef(false);
   useEffect(() => {
-    if (autoRan.current || house.read?.read?.via !== "finder") return;
+    const key = house.read?.read?.via === "finder" ? house.read.address : startLink && house.link === startLink ? startLink : undefined;
+    if (autoRan.current || !key) return;
     autoRan.current = true;
-    void takeFullAnalysisOnce(browserNotes(), house.read.address, Date.now()).then((clicked) => {
+    void takeFullAnalysisOnce(browserNotes(), key, Date.now()).then((clicked) => {
       if (clicked) void analyze(linkGiven(house, house.link, 0));
     });
     // Once, on arrival: what the form holds then is the finder's home.
@@ -162,6 +168,8 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
           if (fetched.photos.length) setShowLinks(true);
         }
       }
+      // Uploads go after the photo links, and the request takes MAX_PHOTOS: the uploads past that are not read.
+      const uploadsSent = Math.max(0, Math.min(files.length, MAX_UPLOADS, MAX_PHOTOS - photos.length));
       if (files.length) {
         setStatus(`Preparing ${files.length} photo${files.length === 1 ? "" : "s"}…`);
         for (const { file } of files.slice(0, MAX_UPLOADS)) photos.push(await toJpeg(file));
@@ -205,6 +213,11 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
         throw new Error(json?.error ?? `${res.status} ${res.statusText}`);
       }
       setResult(json);
+      // The person's own photos this result was worked out from (only those sent), shown beside its verdict.
+      const shown = files.slice(0, uploadsSent).map((f) => URL.createObjectURL(f.file));
+      previewLinks.current.forEach((u) => URL.revokeObjectURL(u));
+      previewLinks.current = shown;
+      setPreviews(shown);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -251,7 +264,7 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
 
   return (
     <div className="space-y-8">
-      <form onSubmit={run} onPaste={handlePaste} className="card p-5 sm:p-6">
+      <form onSubmit={run} onPaste={handlePaste} className="card p-5 shadow-[0_8px_30px_#143d3508] sm:p-6">
         <div className="grid gap-5 lg:grid-cols-[1fr_220px]">
           <div className="space-y-5">
             <div>
@@ -341,7 +354,7 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
                 {read.read?.via === "finder" ? (
                   // The deal finder hands over a listing record: it never has a description or photos, and the place to get the photos is the listing.
                   <>
-                    . The deal finder gives no photos: flip looks for this listing&apos;s photos by its address. If it cannot find them, open the home on{" "}
+                    . The deal finder gives no photos: Renoflip looks for this listing&apos;s photos by its address. If it cannot find them, open the home on{" "}
                     <a href={zillowHref(read.address ?? "")} target="_blank" rel="noreferrer noopener" className="underline" data-form-zillow>
                       Zillow
                     </a>{" "}
@@ -351,7 +364,7 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
                   <>
                     {read.description && read.description.source !== "meta" ? " · description kept" : " · no description came through"}
                     {read.details?.length ? ` · ${read.details.length} detail line${read.details.length === 1 ? "" : "s"}` : ""}
-                    {readPhotos ? "" : ". No photos came through: drag them from the gallery into the drop zone, or use the flip it bookmark."}
+                    {readPhotos ? "" : ". No photos came through: drag them from the gallery into the drop zone, or use the Send to Renoflip bookmark."}
                   </>
                 )}
               </p>
@@ -417,30 +430,22 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
       )}
 
       {result && (
-        <section className="space-y-8">
-          {demo ? <DemoBanner why={result.fallback?.message} /> : untested ? <UntestedBanner /> : null}
-
-          <div className="card flex flex-wrap items-center gap-4 p-5">
-            <VerdictBadge verdict={result.report.deal.verdict} size="lg" demo={demo} untested={untested} />
-            <p className="flex-1 basis-80 text-lg leading-snug">{result.report.deal.decidingFactor}</p>
-            <SaveDealButton payload={{ report: result.report, plan: result.plan, assessment: result.assessment, listing: result.listing, provider: result.provider, subjectSources: result.subjectSources, data: result.data }} />
-          </div>
-          <WithheldNote reasons={result.report.deal.withheld} />
-
-          {result.listing && <ListingCard listing={result.listing} />}
-          {result.photosUsed && (
-            <p className="text-sm text-ink-500">
-              Looked at {result.photosUsed.uploaded + result.photosUsed.fromListing} photos
-              {result.photosUsed.uploaded ? ` · ${result.photosUsed.uploaded} uploaded` : ""}
-              {result.photosUsed.fromListing ? ` · ${result.photosUsed.fromListing} from the listing` : ""}
-              {result.photosUsed.failed ? ` · ${result.photosUsed.failed} could not be fetched` : ""}
-              {result.photosUsed.leftOut ? ` · ${result.photosUsed.leftOut} left out to stay under the size the photo reading takes` : ""}.
-            </p>
-          )}
-          <AssessmentView assessment={result.assessment} />
-          <PlanView plan={result.plan} demo={demo} untested={untested} />
-          <ReportView report={result.report} hideVerdict demo={demo} untested={untested} sources={result.subjectSources} conditionFrom="photos" data={result.data} />
-        </section>
+        <ResultView
+          report={result.report}
+          plan={result.plan}
+          assessment={result.assessment}
+          listing={result.listing}
+          demo={demo}
+          untested={untested}
+          fallbackWhy={result.fallback?.message}
+          sources={result.subjectSources}
+          data={result.data}
+          conditionFrom="photos"
+          photosUsed={result.photosUsed}
+          previews={previews}
+          title={result.listing?.address ?? result.listing?.title ?? "This house"}
+          actions={<SaveDealButton payload={{ report: result.report, plan: result.plan, assessment: result.assessment, listing: result.listing, provider: result.provider, subjectSources: result.subjectSources, data: result.data }} />}
+        />
       )}
     </div>
   );

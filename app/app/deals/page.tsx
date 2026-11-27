@@ -1,13 +1,12 @@
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
-import { VerdictBadge } from "@/components/ui/verdict";
 import { DemoBanner, UntestedBanner } from "@/components/ui/demo";
-import { money } from "@/components/report/report-view";
 import { isDemoProvider, isUntestedProvider } from "@/lib/data/demo";
-import type { Verdict } from "@/lib/engine/types";
+import { DealsBrowser } from "@/components/app/deals-browser";
+import { Icon } from "@/components/ui/icon";
 
-export const metadata = { title: "Deals" };
+export const metadata = { title: "My deals" };
 export const dynamic = "force-dynamic";
 
 export default async function DealsPage() {
@@ -24,57 +23,36 @@ export default async function DealsPage() {
   const anyUntested = deals.some((d) => isUntestedProvider(d.provider));
 
   return (
-    <div>
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-5">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Deals</h1>
-          <p className="mt-1 text-ink-700">Every house you have run, with its verdict.</p>
+          <p className="eyebrow mb-2.5">Your investment pipeline</p>
+          <h1 className="page-title">My deals</h1>
+          <p className="page-lede">Every house you saved: the opportunity, the numbers, and what to check next, together.</p>
         </div>
-        <Link href="/app" className="btn-primary text-sm">New analysis</Link>
+        <Link href="/app/analyze" className="btn-primary">
+          <Icon name="plus" className="h-4 w-4" />
+          New analysis
+        </Link>
       </div>
 
       {deals.length === 0 ? (
-        <div className="card flex flex-col items-center px-6 py-16 text-center">
-          <p className="font-medium">No deals yet</p>
-          <p className="mt-1 max-w-sm text-sm text-ink-700">Run a listing through New analysis and save it. It shows up here with its verdict, ARV and max offer.</p>
-          <Link href="/app" className="btn-primary mt-6 text-sm">Analyze a house</Link>
+        <div className="card flex flex-col items-center px-6 py-16 text-center" data-deals-empty>
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-lime text-ink-950">
+            <Icon name="home" className="h-6 w-6" />
+          </span>
+          <p className="mt-4 font-bold text-ink-900">No deals yet</p>
+          <p className="mt-1 max-w-sm text-sm leading-relaxed text-ink-500">Run a listing through New analysis and save it. It shows up here with its verdict, its profit at asking and the most you could offer.</p>
+          <Link href="/app/analyze" className="btn-primary mt-6">
+            Analyze a house
+          </Link>
         </div>
       ) : (
-        <div className="space-y-4">
-        {anyUntested && <UntestedBanner kind="list" />}
-        {anyDemo && <DemoBanner kind="list" />}
-        <div className="card overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-ink-100/60 text-left text-xs uppercase tracking-wide text-ink-500">
-              <tr>
-                <th className="px-4 py-2.5 font-medium">Property</th>
-                <th className="px-4 py-2.5 font-medium">Verdict</th>
-                <th className="px-4 py-2.5 text-right font-medium">Asking</th>
-                <th className="px-4 py-2.5 text-right font-medium">ARV</th>
-                <th className="px-4 py-2.5 text-right font-medium">Max offer</th>
-                <th className="px-4 py-2.5 text-right font-medium">Profit</th>
-                <th className="px-4 py-2.5 text-right font-medium">Saved</th>
-              </tr>
-            </thead>
-            <tbody>
-              {deals.map((d) => (
-                <tr key={d.id} className="border-t border-ink-100 hover:bg-ink-100/40">
-                  <td className="px-4 py-3">
-                    <Link href={`/app/deals/${d.id}`} className="font-medium hover:underline">{d.title}</Link>
-                    {d.source && <div className="max-w-xs truncate text-xs text-ink-500">{d.source}</div>}
-                  </td>
-                  <td className="px-4 py-3"><VerdictBadge verdict={d.verdict as Verdict} size="sm" demo={isDemoProvider(d.provider)} untested={isUntestedProvider(d.provider)} /></td>
-                  <td className="px-4 py-3 text-right tabular-nums">{money(d.askingPrice)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">{money(d.arv)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">{money(d.maxOffer)}</td>
-                  <td className={`px-4 py-3 text-right tabular-nums ${d.profit < 0 ? "text-pass" : ""}`}>{money(d.profit)}</td>
-                  <td className="px-4 py-3 text-right text-ink-500 whitespace-nowrap">{d.createdAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        </div>
+        <>
+          {anyUntested && <UntestedBanner kind="list" />}
+          {anyDemo && <DemoBanner kind="list" />}
+          <DealsBrowser deals={deals} />
+        </>
       )}
     </div>
   );

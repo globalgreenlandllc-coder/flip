@@ -188,9 +188,9 @@ export function createAnalyzeHandler(deps: AnalyzeDeps) {
         listing = mergeListings(listing, { ...alt, note: reason, readFrom: { ...alt.readFrom, reason } });
       } else if (alt) {
         console.warn("[analyze] the page found by the finder's address was not used", { host: alt.readFrom.host, why });
-        finderMissing = `flip found a page for ${listing.address} on Estately, but ${why}, so its photos were not used.`;
+        finderMissing = `Renoflip found a page for ${listing.address} on Estately, but ${why}, so its photos were not used.`;
       } else {
-        finderMissing = `flip could not find this listing's photos online by its address (${listing.address}).`;
+        finderMissing = `Renoflip could not find this listing's photos online by its address (${listing.address}).`;
       }
     }
 
@@ -375,7 +375,7 @@ export function createAnalyzeHandler(deps: AnalyzeDeps) {
     } catch (err) {
       // No count, no run: an analysis nobody can account for is not started.
       console.error("[analyze] usage check failed", err);
-      return json({ error: "flip could not check your usage just now. Try again in a minute." }, 503);
+      return json({ error: "Renoflip could not check your usage just now. Try again in a minute." }, 503);
     }
     if (!gate.ok) return json({ error: gate.message, limit: gate.reason, usage: gate.usage }, 429, { "retry-after": String(gate.retryAfterSeconds) });
 

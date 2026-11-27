@@ -49,7 +49,7 @@ const NOTICE = {
   linkWasNotThisPage: "The page you pasted is a different house from the link in the form, so the link was cleared.",
   otherLink: "This link is a different listing from the page that was read before, so that page, its photo links and the asking price were taken out.",
   otherLinkNoPage: "This link is a different listing from the last one, so the asking price was taken out.",
-  cannotTell: "flip could not tell whether the page you pasted is this link's listing, so that page, its photo links and the asking price were taken out. To use it, paste the page again now that the link is in the form.",
+  cannotTell: "Renoflip could not tell whether the page you pasted is this link's listing, so that page, its photo links and the asking price were taken out. To use it, paste the page again now that the link is in the form.",
   held: "The link is in. The analysis did not start by itself because the form holds photos or a price you added yourself: press Analyze when they are this house's.",
 };
 

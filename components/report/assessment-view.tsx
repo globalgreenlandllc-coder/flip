@@ -5,7 +5,7 @@ import { AREA_TIME_ZONE } from "@/lib/area";
 import { Block, money } from "./report-view";
 
 const HOW_READ: Record<ListingVia, string> = {
-  server: "Read by flip's server",
+  server: "Read by Renoflip's server",
   browser: "Read through your browser",
   paste: "From the page you pasted",
   button: "Handed over by the button on the listing page",
@@ -13,7 +13,7 @@ const HOW_READ: Record<ListingVia, string> = {
 };
 /** The second way a listing was read, for what the first lacked. */
 const ALSO_READ: Record<ListingVia, string> = {
-  server: "by flip's server",
+  server: "by Renoflip's server",
   browser: "through your browser",
   paste: "from the page you pasted",
   button: "by the button on the listing page",
@@ -60,7 +60,7 @@ export function ListingCard({ listing }: { listing: ListingInfo }) {
         {listing.price ? ` · ${money(listing.price)}` : ""}
         {listing.beds ? ` · ${listing.beds} bd` : ""}
         {listing.baths ? ` · ${listing.baths} ba` : ""}
-        {listing.sqft ? ` · ${listing.sqft.toLocaleString()} sqft` : ""}
+        {listing.sqft ? ` · ${listing.sqft.toLocaleString("en-US")} sqft` : ""}
         {listing.photos?.length ? ` · ${listing.photos.length} photo${listing.photos.length === 1 ? "" : "s"} from the page` : ""}
       </div>
       {listing.read && (

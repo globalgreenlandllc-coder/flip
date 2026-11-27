@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { saveDeal } from "@/app/app/deals/actions";
+import { Icon } from "@/components/ui/icon";
 import type { DealPayload } from "@/lib/deals";
 
 export function SaveDealButton({ payload }: { payload: DealPayload }) {
@@ -29,6 +30,7 @@ export function SaveDealButton({ payload }: { payload: DealPayload }) {
   return (
     <div className="flex items-center gap-3">
       <button onClick={onSave} disabled={state.status === "saving"} className="btn-primary text-sm">
+        <Icon name="bookmark" className="h-4 w-4" />
         {state.status === "saving" ? "Saving…" : "Save deal"}
       </button>
       {state.status === "error" && <span className="text-sm text-pass">{state.message}</span>}

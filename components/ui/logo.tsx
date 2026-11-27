@@ -1,21 +1,24 @@
 import Link from "next/link";
 
-export function Mark({ className = "h-7 w-7" }: { className?: string }) {
+/**
+ * Renoflip's wordmark, in the design's manner: "reno" in a lighter green, "flip" in heavy deep green, and the full
+ * stop in leaf green. `tone="light"` for a dark ground. `size` is the type size; the letters are drawn in tight.
+ */
+export function Wordmark({ size = "md", tone = "dark" }: { size?: "sm" | "md" | "lg"; tone?: "dark" | "light" }) {
+  const px = { sm: "text-[24px]", md: "text-[31px]", lg: "text-[38px]" }[size];
   return (
-    <svg viewBox="0 0 32 32" fill="none" className={className} aria-hidden>
-      <rect width="32" height="32" rx="8" fill="#0b1220" />
-      <path d="M8 16.5 16 9l8 7.5" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M10.5 15.5V23h11v-7.5" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M14 23v-4h4v4" stroke="#10b981" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <span className={`font-extrabold leading-none tracking-[-0.07em] ${px}`}>
+      <span className={tone === "light" ? "text-[#b7d39a]" : "text-[#5f8c6a]"}>reno</span>
+      <span className={tone === "light" ? "text-white" : "text-ink-950"}>flip</span>
+      <span className={tone === "light" ? "text-lime" : "text-brand-500"}>.</span>
+    </span>
   );
 }
 
-export function Logo({ href = "/", className = "" }: { href?: string; className?: string }) {
+export function Logo({ href = "/", size = "md", tone = "dark", className = "" }: { href?: string; size?: "sm" | "md" | "lg"; tone?: "dark" | "light"; className?: string }) {
   return (
-    <Link href={href} className={`inline-flex items-center gap-2 ${className}`}>
-      <Mark />
-      <span className="text-xl font-bold tracking-tight text-ink-950">flip</span>
+    <Link href={href} aria-label="Renoflip home" className={`inline-flex items-center ${className}`}>
+      <Wordmark size={size} tone={tone} />
     </Link>
   );
 }
