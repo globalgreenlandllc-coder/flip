@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const ITEMS = [
   { href: "/app", label: "New analysis", icon: "M12 5v14M5 12h14", exact: true },
+  { href: "/app/find", label: "Find deals", icon: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4", exact: false },
   { href: "/app/deals", label: "Deals", icon: "M4 6h16M4 12h16M4 18h10", exact: false },
   { href: "/app/quick", label: "Quick numbers", icon: "M4 19V5m0 14h16M8 15l4-6 4 3 4-7", exact: false },
 ];

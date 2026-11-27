@@ -9,6 +9,7 @@ const HOW_READ: Record<ListingVia, string> = {
   browser: "Read through your browser",
   paste: "From the page you pasted",
   button: "Handed over by the button on the listing page",
+  finder: "Filled in from a deal finder link",
 };
 /** The second way a listing was read, for what the first lacked. */
 const ALSO_READ: Record<ListingVia, string> = {
@@ -16,6 +17,7 @@ const ALSO_READ: Record<ListingVia, string> = {
   browser: "through your browser",
   paste: "from the page you pasted",
   button: "by the button on the listing page",
+  finder: "from a deal finder link",
 };
 
 const acres = (sqft: number) => (sqft >= 43_560 ? ` (${(sqft / 43_560).toFixed(2)} acres)` : "");
@@ -54,7 +56,7 @@ export function ListingCard({ listing }: { listing: ListingInfo }) {
     <div className="card p-4 text-sm" data-listing-card>
       <div className="font-medium">{listing.address ?? listing.title ?? (listing.url || "Pasted listing page")}</div>
       <div className="mt-1 text-ink-500">
-        {listing.host || "pasted page"}
+        {listing.host || (listing.read?.via === "finder" ? "deal finder" : "pasted page")}
         {listing.price ? ` · ${money(listing.price)}` : ""}
         {listing.beds ? ` · ${listing.beds} bd` : ""}
         {listing.baths ? ` · ${listing.baths} ba` : ""}

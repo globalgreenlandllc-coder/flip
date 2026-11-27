@@ -12,8 +12,9 @@ import { contradicts, factNumber, mergeFacts, readPage, readText, saneFact, with
 import { houseEnd, isParagraph } from "./zone";
 
 /** How a listing page reached flip: read by the server, read through the person's browser (the extension), pasted in, or handed over by the button on the listing page. */
-export type ListingVia = "server" | "browser" | "paste" | "button";
-export const LISTING_VIAS: ListingVia[] = ["server", "browser", "paste", "button"];
+/** How a listing reached the form. "finder": filled in from a deal finder link (/app?from=finder…), which says what flip's deal finder read; the browser's word for it, like "paste" and "button". */
+export type ListingVia = "server" | "browser" | "paste" | "button" | "finder";
+export const LISTING_VIAS: ListingVia[] = ["server", "browser", "paste", "button", "finder"];
 
 export interface ListingInfo {
   /** The listing's link. Empty when a page was pasted without one. */

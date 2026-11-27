@@ -15,6 +15,7 @@ import { PlanView } from "@/components/report/plan-view";
 import { AssessmentView, ListingCard } from "@/components/report/assessment-view";
 import { VerdictBadge } from "@/components/ui/verdict";
 import { DemoBanner, UntestedBanner } from "@/components/ui/demo";
+import { zillowHref } from "@/components/finder/shared";
 import { isUntestedProvider } from "@/lib/data/demo";
 import type { DataSource } from "@/lib/data/house-data";
 import { SaveDealButton } from "@/components/app/save-deal-button";
@@ -228,7 +229,7 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
   // What the box beside the form says about the listing as this browser read it.
   const read = house.read;
   const readPhotos = house.filled.photos.length;
-  const readHow = read?.read?.via === "button" ? "From the listing page" : read?.read?.via === "browser" ? "Read through your browser" : "Read from your paste";
+  const readHow = read?.read?.via === "button" ? "From the listing page" : read?.read?.via === "browser" ? "Read through your browser" : read?.read?.via === "finder" ? "From the deal finder" : "Read from your paste";
 
   return (
     <div className="space-y-8">
@@ -319,9 +320,22 @@ export function Analyzer({ prefill, initialUsage }: { prefill?: Prefill | null; 
                 {read.beds ? ` · ${read.beds} bd` : ""}
                 {read.baths ? ` · ${read.baths} ba` : ""}
                 {read.sqft ? ` · ${read.sqft.toLocaleString()} sqft` : ""}
-                {read.description && read.description.source !== "meta" ? " · description kept" : " · no description came through"}
-                {read.details?.length ? ` · ${read.details.length} detail line${read.details.length === 1 ? "" : "s"}` : ""}
-                {readPhotos ? "" : ". No photos came through: drag them from the gallery into the drop zone, or use the flip it bookmark."}
+                {read.read?.via === "finder" ? (
+                  // The deal finder hands over a listing record: it never has a description or photos, and the place to get the photos is the listing.
+                  <>
+                    . The deal finder gives no photos: open the home on{" "}
+                    <a href={zillowHref(read.address ?? "")} target="_blank" rel="noreferrer noopener" className="underline" data-form-zillow>
+                      Zillow
+                    </a>{" "}
+                    and drag its photos into the drop zone.
+                  </>
+                ) : (
+                  <>
+                    {read.description && read.description.source !== "meta" ? " · description kept" : " · no description came through"}
+                    {read.details?.length ? ` · ${read.details.length} detail line${read.details.length === 1 ? "" : "s"}` : ""}
+                    {readPhotos ? "" : ". No photos came through: drag them from the gallery into the drop zone, or use the flip it bookmark."}
+                  </>
+                )}
               </p>
             )}
             <div>

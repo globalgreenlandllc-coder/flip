@@ -1,8 +1,9 @@
 import { DEFAULT_MARKET_CONFIG, REAL_SALES_CONFIG, REAL_SALES_TIERS, RELAXATION_TIERS, selectComps } from "@/lib/engine";
 import type { CompCriteria, MarketConfig, PropertyFacts, Sale } from "@/lib/engine";
 import { addressKey, sameHouseAddress, takeApart } from "./address-match";
-import { BudgetExhausted, dataBudgetFromEnv, reserve, type DataBudget, type DataStore, type RequestOutcome } from "./budget";
-import { HOME_TYPES, NoAnswer, RENTCAST_BASE_URL, RENTCAST_PAGE, askRentcast, propertyUrl, saleFrom, salesUrl, type Fetcher, type PropertyRecord, type RentcastReply } from "./rentcast";
+import { NotAnswered, PROVIDER, createAsker, kind, within, type Answer, type Question, type RentcastSettings, type Run } from "./asker";
+import { dataBudgetFromEnv, type DataStore } from "./budget";
+import { HOME_TYPES, RENTCAST_BASE_URL, RENTCAST_PAGE, propertyUrl, saleFrom, salesUrl, type Fetcher, type PropertyRecord, type RentcastReply } from "./rentcast";
 import { SyntheticProvider } from "./synthetic-provider";
 
 /**
@@ -125,11 +126,7 @@ export interface HouseAsk {
   asOf: string;
 }
 
-export interface RentcastSettings {
-  key: string;
-  baseUrl: string;
-  budget: DataBudget;
-}
+export type { RentcastSettings } from "./asker";
 
 /**
  * RentCast as this deployment is set up for it, or null when it is not: no
@@ -152,7 +149,6 @@ export function rentcastFromEnv(env: Record<string, string | undefined> = proces
   return { key, baseUrl: usable ? given : RENTCAST_BASE_URL, budget };
 }
 
-const PROVIDER = "rentcast";
 const DAY_MS = 86_400_000;
 const PROPERTY_KEPT_DAYS = 30;
 const SALES_KEPT_DAYS = 7;
@@ -172,10 +168,6 @@ const MIN_RADIUS_MILES = 0.2;
 export const MAX_SEARCHES = 4;
 /** All the asking for one house may take this long together. The route it runs in has two minutes, and the AI needs most of them. */
 const HOUSE_DEADLINE_MS = 40_000;
-/** How long the bookkeeping around one request (the count before it, the record and the keeping after) may take on top of the request itself. */
-const BOOKKEEPING_MS = 8_000;
-/** A question is not started, and a request not sent, with less time than this left for it. */
-const TOO_LATE_MS = 1_000;
 /** A search that returns this many records with hardly a price among them is in a place that does not publish prices. */
 const PRICES_EXPECTED_OF = 10;
 const PRICED_SHARE = 0.1;
@@ -194,25 +186,6 @@ const longDate = (d: Date) => d.toLocaleDateString("en-US", { month: "long", day
 /** An address as one line, for showing and for sending. */
 const oneLine = (address: string) => address.replace(/\s+/g, " ").trim();
 const shown = (address: string) => (address.length > 90 ? `${address.slice(0, 90)}…` : address);
-/** An error as it may be logged: what kind it was, never what it said. Messages quote what was asked, and what was asked is somebody's address. */
-const kind = (err: unknown) => (err instanceof Error ? { name: err.name, code: (err as { code?: unknown }).code } : { name: typeof err });
-
-/** A promise that gives up after `ms`: what it waits for may never settle, and nothing here may wait for ever. */
-function within<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Unavailable("unavailable")), Math.max(1, ms));
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (err) => {
-        clearTimeout(timer);
-        reject(err);
-      },
-    );
-  });
-}
 
 function fallbackFor(err: Unavailable, ask: HouseAsk): Fallback {
   const where = ask.address ? shown(oneLine(ask.address)) : "this house";
@@ -268,151 +241,16 @@ async function demoHouse(ask: HouseAsk, fallback?: Fallback): Promise<HouseData>
   return { provider: "synthetic", demo: true, fallback, recorded, facts, sales: await synthetic.salesNear(facts, 2.5, 18, ask.asOf), config: DEFAULT_MARKET_CONFIG, tiers: RELAXATION_TIERS };
 }
 
-/** What is kept of an answer. */
-interface Kept {
-  records: PropertyRecord[];
-  returned: number;
-  total: number | null;
-}
-
-interface Answer {
-  reply: RentcastReply;
-  readAt: Date;
-  /** True when the answer was one kept from before: nothing was asked and nothing paid. */
-  kept: boolean;
-}
-
-interface Question {
-  what: "property" | "sales";
-  /** What the answer is kept under. */
-  key: string;
-  /**
-   * For a question about an address: the address exactly as it was written. An answer that does not hold the
-   * house's record is the answer to that writing and to no other ("Apt 4" may be found where "#4" was not), so
-   * it is kept under this, and only an answer that does hold the record is kept under `key`, which every
-   * writing of the house shares. Two runs wait for each other only when they wrote the address the same way.
-   */
-  asWritten?: string;
-  /** Does the answer hold what was asked for? Only for a question with `asWritten`. */
-  found?: (reply: RentcastReply) => boolean;
-  url: string;
-  /** How long the answer is kept, which may depend on what it says. */
-  keptDays: (reply: RentcastReply) => number;
-  /** How long this question may take: waiting for another run's answer to it, and then the request itself. */
-  timeoutMs: number;
-}
-
-/** One run for one house: given up on when its time is over, after which it sends nothing more. */
-interface Run {
-  over: boolean;
-}
-
 export function createHouseData(deps: HouseDataDeps): (ask: HouseAsk) => Promise<HouseData> {
-  /**
-   * Questions being asked right now, by what they are kept under: a second
-   * run for the same house waits for the first one's answer instead of
-   * paying for its own. Only an answer is shared. A question that was
-   * refused or failed was refused or failed for the one who asked it (it may
-   * have been their share that ran out), so one of those waiting then asks
-   * for itself, and the rest wait for that one.
-   */
-  const beingAsked = new Map<string, Promise<Answer>>();
-  const bookkeepingMs = deps.bookkeepingMs ?? BOOKKEEPING_MS;
-
-  /**
-   * "No home sold that matched" (a search answered 404, which is not billed) is an answer too, and is kept and
-   * shared like one: the search says exactly what it asked. "No such address" is not: it is the answer to one
-   * writing of the address, costs nothing to ask again, and is asked again.
-   */
-  const nothing = (q: Question, reply: RentcastReply) => q.what === "sales" && reply.status === 404;
-  const answered = (q: Question, reply: RentcastReply) => (reply.status === 200 && !reply.garbled) || nothing(q, reply);
-
-  /** One question: answered from what was kept, or asked (if the budget allows) and kept. */
+  // The questions are put by the shared asker (asker.ts): the budget, what is kept, what is being asked right now.
+  const asker = createAsker({ store: deps.store, now: deps.now, fetcher: deps.fetcher, bookkeepingMs: deps.bookkeepingMs });
+  /** One question; a question that could not be answered becomes the reason the house gets the demo's data. */
   async function question(settings: RentcastSettings, q: Question, userId: string | null, run: Run): Promise<Answer> {
-    const began = performance.now();
-    const left = () => q.timeoutMs - (performance.now() - began);
-
-    // What was kept: under the question's own name, or, for an address, under the address as it was written (an
-    // answer that was not the house's). A database that does not answer is no answer: the question is then asked,
-    // if the budget can be counted.
-    for (const key of q.asWritten ? [q.key, q.asWritten] : [q.key]) {
-      const cached = await within(deps.store.cacheGet(key, deps.now()), Math.min(q.timeoutMs, bookkeepingMs)).catch((err) => {
-        console.error("[rentcast] could not read the kept answers", kind(err));
-        return null;
-      });
-      if (!cached) continue;
-      try {
-        const kept = JSON.parse(cached.payload) as Partial<Kept>;
-        if (Array.isArray(kept.records)) return { reply: { status: 200, records: kept.records, returned: kept.returned ?? kept.records.length, total: kept.total ?? null }, readAt: cached.fetchedAt, kept: true };
-      } catch {
-        /* a kept answer that cannot be read is asked for again */
-      }
-    }
-
-    // The same question, being asked right now by another run: its answer is waited for, for no longer than this
-    // question may take. If that one fails, the first of those waiting asks, and the others wait for it in turn.
-    const flight = q.asWritten ?? q.key;
-    for (;;) {
-      const running = beingAsked.get(flight);
-      if (!running || left() < TOO_LATE_MS) break;
-      const shared = await within(running, left()).catch(() => null);
-      if (shared && answered(q, shared.reply)) return shared;
-      if (beingAsked.get(flight) === running) break;
-    }
-    if (run.over || left() < TOO_LATE_MS) throw new Unavailable("unavailable");
-
-    let givenUp = false;
-    const asking = within(
-      (async (): Promise<Answer> => {
-        let id: string;
-        try {
-          id = await reserve(deps.store, settings.budget, { provider: PROVIDER, kind: q.what, userId, at: deps.now() });
-        } catch (err) {
-          if (err instanceof BudgetExhausted) throw new Unavailable(err.scope === "all" ? "budget" : "your-share", { opensAt: err.opensAt });
-          // No count, no request: what cannot be counted is not spent.
-          console.error("[rentcast] the request budget could not be checked", kind(err));
-          throw new Unavailable("unavailable");
-        }
-        // Counting took so long that nobody is waiting for this answer any more: the request is not sent, and comes off the record.
-        if (givenUp || run.over || left() < TOO_LATE_MS) {
-          await deps.store.discard(id).catch((err) => console.error("[rentcast] could not take back a request that was not sent", kind(err)));
-          throw new Unavailable("unavailable");
-        }
-        const started = deps.now().getTime();
-        const record = (outcome: RequestOutcome) => deps.store.finish(id, { ...outcome, ms: deps.now().getTime() - started }).catch((err) => console.error("[rentcast] could not record a request", kind(err)));
-        let reply: RentcastReply;
-        try {
-          reply = await askRentcast(q.url, settings.key, deps.fetcher, left());
-        } catch (err) {
-          await record({ status: "unknown" });
-          console.error("[rentcast] no answer", { what: q.what, why: err instanceof NoAnswer ? err.why : "error" });
-          throw new Unavailable("unavailable");
-        }
-        await record({ status: reply.status === 200 ? "billed" : "free", httpStatus: reply.status, results: reply.returned });
-        const readAt = deps.now();
-        if (answered(q, reply)) {
-          // "Nothing matched" is kept as that: an answer with no records in it.
-          const kept: Kept = nothing(q, reply) ? { records: [], returned: 0, total: 0 } : { records: reply.records, returned: reply.returned, total: reply.total };
-          // An answer about an address that is not the house's is kept under that writing of the address alone.
-          const key = q.asWritten && !q.found?.(reply) ? q.asWritten : q.key;
-          await deps.store
-            .cachePut({ key, provider: PROVIDER, payload: JSON.stringify(kept), fetchedAt: readAt, expiresAt: new Date(readAt.getTime() + q.keptDays(reply) * DAY_MS) })
-            .catch((err) => console.error("[rentcast] could not keep an answer", kind(err)));
-        }
-        return { reply, readAt, kept: false };
-      })(),
-      // The request has its own limit; this one is for the database around it, which has none of its own.
-      left() + bookkeepingMs,
-    );
-    beingAsked.set(flight, asking);
     try {
-      return await asking;
+      return await asker.question(settings, q, userId, run);
     } catch (err) {
-      givenUp = true;
+      if (err instanceof NotAnswered) throw new Unavailable(err.code, { opensAt: err.opensAt });
       throw err;
-    } finally {
-      // Only its own entry: a later run may have put its own question here since.
-      if (beingAsked.get(flight) === asking) beingAsked.delete(flight);
     }
   }
 
@@ -501,7 +339,7 @@ export function createHouseData(deps: HouseDataDeps): (ask: HouseAsk) => Promise
       const days = Math.ceil((Math.round(step.months * 30.4375) + 1) / 31) * 31;
       const sqft: [number, number] = [Math.floor(((centre - 50) * (1 - step.sqftTolerance)) / 50) * 50, Math.ceil(((centre + 50) * (1 + step.sqftTolerance)) / 50) * 50];
       const key = `${PROVIDER}:sales:v3:${record.lat.toFixed(5)},${record.lng.toFixed(5)}:${propertyType}:${sqft[0]}-${sqft[1]}:${radiusMiles}:${days}`;
-      const got = await question(settings, { what: "sales", key, url: salesUrl(settings.baseUrl, { lat: record.lat, lng: record.lng, radiusMiles, days, sqft, propertyType }), keptDays: () => SALES_KEPT_DAYS, timeoutMs: timeLeft(20_000) }, ask.userId, run);
+      const got = await question(settings, { what: "sales", key, emptyIsAnswer: true, url: salesUrl(settings.baseUrl, { lat: record.lat, lng: record.lng, radiusMiles, days, sqft, propertyType }), keptDays: () => SALES_KEPT_DAYS, timeoutMs: timeLeft(20_000) }, ask.userId, run);
       if (got.reply.status !== 404 && (got.reply.status !== 200 || got.reply.garbled)) throw refusal(got.reply.status, "sales search");
       if (readAt === null || got.readAt < readAt) readAt = got.readAt;
       // 404 is RentCast's "nothing matched": an empty answer, not a failure.
@@ -590,7 +428,7 @@ export function createHouseData(deps: HouseDataDeps): (ask: HouseAsk) => Promise
     try {
       // The caller has its answer inside the limit, whatever is still waited for underneath. A request already sent
       // is then finished, recorded and kept for the next run; nothing more is sent for this one.
-      return await within(realHouse(settings, ask, run), deps.deadlineMs ?? HOUSE_DEADLINE_MS);
+      return await within(realHouse(settings, ask, run), deps.deadlineMs ?? HOUSE_DEADLINE_MS, () => new Unavailable("unavailable"));
     } catch (err) {
       run.over = true;
       if (err instanceof Unavailable) return demoHouse(ask, fallbackFor(err, ask));

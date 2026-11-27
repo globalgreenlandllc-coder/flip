@@ -9,5 +9,7 @@ export { evaluateDeal, maxAllowableOffer, costsAt, fmt } from "./deal";
 export { gateReasons, withGate } from "./gate";
 export type { GateContext } from "./gate";
 export { rehabFromCondition } from "./rehab";
+export { REPAIR_CONDITION, REPAIR_LEVELS, byPromise, heatOf, screenListing } from "./screen";
+export type { Heat, RepairLevel, ScreenComp, ScreenInput, ScreenResult } from "./screen";
 export { weightedMedian, weightedPercentile, haversineMiles, monthsBetween } from "./math";
 export { DEFAULT_MARKET_CONFIG, DEFAULT_DEAL_TERMS, REAL_SALES_CONFIG, REAL_SALES_TIERS } from "./defaults";
