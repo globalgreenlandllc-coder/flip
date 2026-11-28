@@ -41,7 +41,7 @@ export async function saveDeal(payload: DealPayload, scenario?: unknown): Promis
   void _ignored;
   let toStore: DealPayload = rest;
   if (scenario !== undefined && scenario !== null) {
-    const kept = scenarioFor(rest.report, scenario, { demo: isDemoProvider(provider), now: new Date() });
+    const kept = scenarioFor(rest.report, scenario, { demo: isDemoProvider(provider), now: new Date(), plan: rest.plan });
     if (!kept.ok) return { ok: false, error: kept.error };
     if (kept.scenario) toStore = { ...rest, scenario: kept.scenario };
   }
@@ -90,7 +90,7 @@ export async function saveScenario(id: string, inputs: unknown): Promise<SaveSce
     return { ok: false, error: "That deal could not be read." };
   }
   // Demo or not is the column's word, not the payload's (as the deal page reads it).
-  const kept = scenarioFor(payload.report, inputs, { demo: isDemoProvider(deal.provider), now: new Date() });
+  const kept = scenarioFor(payload.report, inputs, { demo: isDemoProvider(deal.provider), now: new Date(), plan: payload.plan });
   if (!kept.ok) return kept;
   const { scenario: _old, ...rest } = payload;
   void _old;

@@ -204,9 +204,22 @@ export type DealTerms = Omit<DealInputs, "askingPrice">;
  */
 export type Verdict = "GO" | "TIGHT" | "PASS" | "CHECK FIRST";
 
+/** A line of a Deal Studio scope priced below the typical range for its work (the person's cost or crew discount). */
+export interface CostBelowTypical {
+  key: string;
+  label: string;
+  /** The cost the deal uses for the line. */
+  cost: number;
+  low: number;
+  high: number;
+  /** True when the person typed it; false when the crew discount took it there. */
+  typed: boolean;
+}
+
 /** Why a GO was withheld. */
 export interface GateReason {
-  code: "AREA_UNTESTED" | "LOW_CONFIDENCE";
+  /** RESALE_ABOVE_FULL: Deal Studio only, a resale the person typed above the fully renovated value. */
+  code: "AREA_UNTESTED" | "LOW_CONFIDENCE" | "RESALE_ABOVE_FULL";
   /** What is open, in plain words. */
   message: string;
   /** What would clear it. */
@@ -255,6 +268,19 @@ export interface DealResult {
    * parts below par but the block's ceiling stops the value there anyway; "costs" = what it leaves costs resale.
    */
   belowPar?: "none" | "absorbed" | "costs";
+  /**
+   * Deal Studio's advisor only (never on an analysis): where the resale of a changed scope comes from. "estimate" = the
+   * estimate for the scope chosen (placeholder rates); "kept" = a value kept when the scope changed after it; "mine" =
+   * typed by the person. Absent: the analysis' own resale (resaleBasis says which).
+   */
+  resaleChoice?: "estimate" | "kept" | "mine";
+  /**
+   * Deal Studio's advisor only: the resale rests on the plan's placeholder shares of what each part adds (a scope's
+   * estimate, or the analysis' own when its plan leaves part of the house below par). Absent: belowPar "costs" says it.
+   */
+  resaleEstimated?: boolean;
+  /** Deal Studio's advisor only: the lines whose cost used is below the typical range for the work. */
+  costsBelowTypical?: CostBelowTypical[];
   /** The terms the deal was worked out with (2026-11-28, Deal Studio). Absent on deals saved before then. */
   terms?: DealTerms;
 }

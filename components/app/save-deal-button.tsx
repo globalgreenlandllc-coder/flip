@@ -5,10 +5,14 @@ import Link from "next/link";
 import { saveDeal } from "@/app/app/deals/actions";
 import { Icon } from "@/components/ui/icon";
 import type { DealPayload } from "@/lib/deals";
-import type { StudioInputs } from "@/lib/engine/studio";
+import type { OpenScenario } from "@/lib/api/scenario";
 
-/** Save the result as a deal; `scenario`: the person's Deal Studio inputs when they changed any (kept with the deal). */
-export function SaveDealButton({ payload, scenario, onSaved }: { payload: DealPayload; scenario?: StudioInputs | null; onSaved?: (id: string, kept: StudioInputs | null) => void }) {
+/**
+ * Save the result as a deal. `scenario`: what to send for the person's Deal Studio scenario when they changed anything
+ * (their inputs, and the renovation scope where there is one); `current`: the same, as the Studio opens it, so the page
+ * goes on knowing what the deal holds.
+ */
+export function SaveDealButton({ payload, scenario, current, onSaved }: { payload: DealPayload; scenario?: unknown; current?: OpenScenario | null; onSaved?: (id: string, kept: OpenScenario | null) => void }) {
   const [state, setState] = useState<{ status: "idle" | "saving" | "saved" | "error"; id?: string; message?: string }>({ status: "idle" });
 
   async function onSave() {
@@ -17,7 +21,7 @@ export function SaveDealButton({ payload, scenario, onSaved }: { payload: DealPa
       const result = await saveDeal(payload, scenario ?? undefined);
       setState(result.ok ? { status: "saved", id: result.id } : { status: "error", message: result.error });
       // The page goes on with the saved deal: later changes are saved as its scenario (components/report/studio.tsx).
-      if (result.ok) onSaved?.(result.id, scenario ?? null);
+      if (result.ok) onSaved?.(result.id, scenario ? (current ?? null) : null);
     } catch {
       // The action itself did not come back (offline, a server fault): its own words would be a digest, not a sentence.
       setState({ status: "error", message: "Could not save just now. Try again." });

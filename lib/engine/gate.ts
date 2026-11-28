@@ -65,9 +65,25 @@ export function gateReasons(report: Report, ctx: GateContext): GateReason[] {
  * first line of the narrative change, and `deal.withheld` says why.
  */
 export function withGate(report: Report, ctx: GateContext): Report {
-  if (report.deal.verdict !== "GO") return report;
-  const reasons = gateReasons(report, ctx);
-  if (reasons.length === 0) return report;
+  return withReasons(report, report.deal.verdict === "GO" ? gateReasons(report, ctx) : [], ctx.price);
+}
+
+/**
+ * Deal Studio (2026-11-28): a resale the person typed above the fully renovated value. No GO rests on it, on demo
+ * numbers either: what the comparable sales give the house fully renovated is the most the analysis stands behind.
+ */
+export function resaleAboveFullReason(typed: number, full: number): GateReason {
+  return {
+    code: "RESALE_ABOVE_FULL",
+    message: `The resale you typed, $${fmt(typed)}, is above this house's fully renovated value from the comparable sales, $${fmt(full)}.`,
+    clears: "Sales of renovated homes like this one nearby that support it, or a broker's opinion of the resale value; or a resale at or under the fully renovated value.",
+  };
+}
+
+/** The report with its GO withheld for the given reasons (none: the report as it is). `price`: as GateContext.price. */
+export function withReasons(report: Report, reasons: GateReason[], price?: string): Report {
+  if (report.deal.verdict !== "GO" || reasons.length === 0) return report;
+  const ctx = { price };
   const { deal } = report;
   // The reasons as one sentence: each without its full stop, the later ones without their capital.
   const why = reasons.map((r, i) => (i === 0 ? r.message : r.message[0].toLowerCase() + r.message.slice(1)).replace(/\.$/, "")).join("; and ");

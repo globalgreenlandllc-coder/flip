@@ -2,12 +2,55 @@
 
 import { useMemo, useState } from "react";
 import type { Report } from "@/lib/engine/types";
+import type { CategoryKey, PlanAction, RenovationPlan, ScopeOption } from "@/lib/engine/renovation";
 import { STUDIO_BOUNDS, clampInputs, liveNumbers, liveReport, sameInputs, studioBase, type LiveNumbers, type StudioInputs } from "@/lib/engine/studio";
+import {
+  advisorBase,
+  advisorLive,
+  approachChoices,
+  approachOf,
+  applyWholeScope,
+  changeScope,
+  choiceKeys,
+  cleanAdvisor,
+  defaultAdvisor,
+  estimateFor,
+  sameAdvisor,
+  scopeNotes,
+  type AdvisorBase,
+  type AdvisorLive,
+  type AdvisorState,
+  type ApproachId,
+  type ScopeMap,
+} from "@/lib/engine/advisor";
+import type { OpenScenario, StoredAdvisor } from "@/lib/api/scenario";
 import { saveScenario } from "@/app/app/deals/actions";
 import { DemoTag } from "@/components/ui/demo";
 import { Icon } from "@/components/ui/icon";
 import { money } from "@/components/ui/format";
 import { resaleWords } from "./resale";
+
+/** Deal Studio's renovation advisor for one result (null: Quick numbers, or a plan saved before the advisor). */
+export interface AdvisorUi {
+  base: AdvisorBase;
+  state: AdvisorState;
+  now: AdvisorLive;
+  /** The approach the chosen scope is, if it is one. */
+  approach: ApproachId | null;
+  /** The scope or the resale differs from the analysis'. */
+  changed: boolean;
+  setOption: (key: CategoryKey, option: ScopeOption) => void;
+  setCost: (key: CategoryKey, action: PlanAction, cost: number | null) => void;
+  setCrew: (pct: number) => void;
+  /** Apply an approach or another whole scope: its estimated resale is applied, and the review notice opens. */
+  applyScope: (choices: ScopeMap) => void;
+  applyApproach: (id: ApproachId) => void;
+  useEstimate: () => void;
+  /** Close the review notice, keeping the resale as it is. */
+  confirmResale: () => void;
+  /** The person's own resale (the review stays open while they type). */
+  setMine: (value: number) => void;
+}
 
 export interface Studio {
   /** False: the deal is shown as analysed and cannot be changed (why says why). */
@@ -27,20 +70,75 @@ export interface Studio {
   /** The base renovation and resale the live deal is worked on. */
   rehab: number;
   resale: number;
+  /** The renovation advisor, where the result has one. */
+  advisor: AdvisorUi | null;
+  /** What to send to save the scenario: version 2 ({ inputs, advisor }) where the advisor exists, else the inputs. */
+  toSave: () => unknown;
+  /** The screen holds what `held` holds (a saved scenario, or null for the analysis' own numbers). */
+  holds: (held: OpenScenario | null) => boolean;
+}
+
+/** The advisor's state as sent to the server (lib/api/scenario.ts advisorInput). */
+function advisorToSend(s: AdvisorState): StoredAdvisor {
+  return {
+    choices: Object.entries(s.choices).map(([key, option]) => ({ key: key as CategoryKey, option: option! })),
+    costs: s.costs.map((c) => ({ key: c.key, action: c.action as StoredAdvisor["costs"][number]["action"], cost: c.cost })),
+    crewPct: s.crewPct,
+    resale: s.resale,
+    reviewOpen: s.reviewOpen,
+  };
 }
 
 /**
- * Deal Studio's state for one result: the analysis' inputs, the person's, and the deal worked again from them in the
- * browser (lib/engine/studio.ts). `stored`: a saved scenario's inputs to open on.
+ * Deal Studio's state for one result: the analysis' inputs, the person's, the renovation scope where the result has a
+ * plan, and the deal worked again from them in the browser (lib/engine/studio.ts, lib/engine/advisor.ts). `stored`: a
+ * saved scenario to open on.
  */
-export function useStudio(report: Report, demo: boolean, stored?: StudioInputs | null): Studio {
+export function useStudio(report: Report, demo: boolean, stored?: OpenScenario | null, plan?: RenovationPlan | null): Studio {
   const base = useMemo(() => studioBase(report), [report]);
   const analysed = base.editable ? base.inputs : null;
-  const [inputs, setInputs] = useState<StudioInputs | null>(() => (base.editable ? clampInputs(stored ?? base.inputs) : null));
+  const ab = useMemo(() => (base.editable ? advisorBase(report, plan, base) : null), [base, report, plan]);
+  const adv = ab && ab.ok ? ab.base : null;
+  const [inputs, setInputs] = useState<StudioInputs | null>(() => (base.editable ? clampInputs(stored?.inputs ?? base.inputs) : null));
+  const [state, setState] = useState<AdvisorState | null>(() => (adv ? cleanAdvisor(adv, stored?.advisor ?? defaultAdvisor(adv)) : null));
+  const asking = report.deal.purchasePrice;
   // The analysed price is passed so a different price is called "your price", never the asking price.
-  const live = useMemo(() => (base.editable && inputs ? liveNumbers(base.rehab, base.resale, inputs, report.deal.purchasePrice) : null), [base, inputs, report]);
-  const shown = useMemo(() => (live ? liveReport(report, live.deal, { demo }) : report), [report, live, demo]);
-  const changed = !!(analysed && inputs && !sameInputs(analysed, inputs));
+  const now = useMemo(() => (adv && state && inputs ? advisorLive(adv, inputs, state, asking) : null), [adv, state, inputs, asking]);
+  const live = useMemo(() => (now ? now.live : base.editable && inputs ? liveNumbers(base.rehab, base.resale, inputs, asking) : null), [now, base, inputs, asking]);
+  const advChanged = !!(adv && state && !sameAdvisor(adv, state, defaultAdvisor(adv)));
+  const shown = useMemo(() => {
+    if (!live) return report;
+    if (!now || !advChanged || !state) return liveReport(report, live.deal, { demo });
+    return liveReport(report, live.deal, { demo, scope: scopeNotes(adv!, state, now) });
+  }, [report, live, now, advChanged, state, adv, demo]);
+  const inputsChanged = !!(analysed && inputs && !sameInputs(analysed, inputs));
+  const changed = inputsChanged || advChanged;
+
+  const advisor: AdvisorUi | null =
+    adv && state && now
+      ? {
+          base: adv,
+          state,
+          now,
+          approach: approachOf(adv, state.choices),
+          changed: advChanged,
+          setOption: (key, option) => setState((s) => (s ? changeScope(adv, s, { ...s.choices, [key]: option }) : s)),
+          setCost: (key, action, cost) =>
+            setState((s) => {
+              if (!s) return s;
+              const costs = s.costs.filter((c) => !(c.key === key && c.action === action));
+              return cleanAdvisor(adv, { ...s, costs: cost === null ? costs : [...costs, { key, action, cost }] });
+            }),
+          setCrew: (pct) => setState((s) => (s ? cleanAdvisor(adv, { ...s, crewPct: pct }) : s)),
+          applyScope: (choices) => setState((s) => (s ? applyWholeScope(adv, s, choices) : s)),
+          applyApproach: (id) => setState((s) => (s ? applyWholeScope(adv, s, approachChoices(adv, id)) : s)),
+          useEstimate: () => setState((s) => (s ? { ...s, resale: { basis: "estimate", value: estimateFor(adv, s.choices) }, reviewOpen: false } : s)),
+          confirmResale: () => setState((s) => (s ? { ...s, reviewOpen: false } : s)),
+          // The review stays open while the person types (the field is in it); "Use $X" there closes it.
+          setMine: (value) => setState((s) => (s ? cleanAdvisor(adv, { ...s, resale: { basis: "mine", value } }) : s)),
+        }
+      : null;
+
   return {
     editable: base.editable,
     why: base.editable ? null : base.why,
@@ -48,14 +146,30 @@ export function useStudio(report: Report, demo: boolean, stored?: StudioInputs |
     inputs,
     set: (key, value) => setInputs((was) => (was ? clampInputs({ ...was, [key]: value }) : was)),
     setAll: (next) => setInputs(clampInputs(next)),
-    reset: () => setInputs(analysed),
+    reset: () => {
+      setInputs(analysed);
+      if (adv) setState(defaultAdvisor(adv));
+    },
     changed,
     live,
     shown,
-    rehab: base.editable ? base.rehab : 0,
-    resale: base.editable ? base.resale : report.deal.arv,
+    rehab: now ? now.cost.rehab : base.editable ? base.rehab : 0,
+    resale: now ? now.resale : base.editable ? base.resale : report.deal.arv,
+    advisor,
+    toSave: () => (adv && state && inputs ? { inputs, advisor: advisorToSend(state) } : inputs),
+    holds: (held) => {
+      if (!analysed || !inputs) return true;
+      const heldInputs = held?.inputs ?? analysed;
+      if (!sameInputs(heldInputs, inputs)) return false;
+      if (!adv || !state) return true;
+      const heldState = held?.advisor ? cleanAdvisor(adv, held.advisor) : defaultAdvisor(adv);
+      return sameAdvisor(adv, heldState, state);
+    },
   };
 }
+
+/** Keys of the lines a scope can choose (re-exported for the panel). */
+export { choiceKeys };
 
 const pctText = (n: number | null, digits = 1) => (n === null || !Number.isFinite(n) ? "—" : `${(n * 100).toFixed(digits)}%`);
 
@@ -75,7 +189,7 @@ function readTyped(text: string): number | null {
  * in, a note under it says the number actually used whenever that is not what the field shows (held to its range, or
  * not read as a number at all), so the screen never shows one number and works with another.
  */
-function NumberField({ id, label, value, onChange, unit, scale = 1, disabled, hint }: { id: string; label: string; value: number; onChange: (n: number) => void; unit: "$" | "%" | "$/mo"; scale?: number; disabled?: boolean; hint?: string }) {
+export function NumberField({ id, label, value, onChange, unit, scale = 1, disabled, hint }: { id: string; label: string; value: number; onChange: (n: number) => void; unit: "$" | "%" | "$/mo"; scale?: number; disabled?: boolean; hint?: string }) {
   const [draft, setDraft] = useState<string | null>(null);
   const prefix = unit === "$" || unit === "$/mo" ? "$" : "";
   const suffix = unit === "%" ? "%" : unit === "$/mo" ? "/mo" : "";
@@ -143,7 +257,8 @@ function Figure({ label, value, sub, tag, data }: { label: string; value: string
 export function OfferLab({ studio, report, demo, priceWhat }: { studio: Studio; report: Report; demo: boolean; priceWhat: string }) {
   const [open, setOpen] = useState(false);
   const asking = report.deal.purchasePrice;
-  const resale = resaleWords(report.deal);
+  // The resale's own words: the analysis', or (a changed scope) where it comes from now.
+  const resale = resaleWords(studio.shown.deal);
   if (!studio.editable || !studio.inputs || !studio.live) {
     return (
       <div className="card flex flex-wrap items-center gap-x-8 gap-y-3 px-5 py-4" data-price-bar data-studio-readonly>
@@ -226,7 +341,7 @@ export function OfferLab({ studio, report, demo, priceWhat }: { studio: Studio; 
 
         <div className="min-w-0 space-y-5">
           <div className="grid grid-cols-2 gap-x-5 gap-y-4 sm:grid-cols-4">
-            <Figure label={resale.label} value={money(studio.resale)} sub="What the analysis found; these numbers do not move it" tag={demo} data="resale" />
+            <Figure label={resale.label} value={money(studio.resale)} sub={studio.advisor?.changed && studio.advisor.state.resale.basis !== "analysis" ? "Set under Renovation budget; these numbers do not move it" : "What the analysis found; these numbers do not move it"} tag={demo} data="resale" />
             <Figure label="Cash needed" value={money(live.cashNeeded)} sub="Every cost before the sale, less the loan" tag={demo} data="cash" />
             <Figure label="Return on project cost" value={pctText(live.roiOnCost)} sub="Profit ÷ total project cost" tag={demo} data="roi-cost" />
             <Figure label="Return on cash" value={pctText(live.roiOnCash, 0)} sub="Profit ÷ the cash you put in" tag={demo} data="roi-cash" />
@@ -322,17 +437,16 @@ function PriceInput({ value, onChange }: { value: number; onChange: (n: number) 
  * it). The server works the numbers out again before keeping them. `kept`: the inputs the deal holds now (its saved
  * scenario, or null for the analysis' own), so the bar can say plainly when the screen shows changes not yet saved.
  */
-export function SaveScenarioButton({ dealId, studio, kept }: { dealId: string; studio: Studio; kept: StudioInputs | null }) {
+export function SaveScenarioButton({ dealId, studio, kept }: { dealId: string; studio: Studio; kept: OpenScenario | null }) {
   const [state, setState] = useState<{ status: "idle" | "saving" | "error"; message?: string }>({ status: "idle" });
-  const [held, setHeld] = useState<StudioInputs | null>(kept);
+  const [held, setHeld] = useState<OpenScenario | null>(kept);
   if (!studio.editable || !studio.inputs || !studio.analysed) return null;
-  const current = studio.inputs;
-  const holding = held ?? studio.analysed;
-  const unsaved = !sameInputs(holding, current);
+  const current: OpenScenario = { inputs: studio.inputs, advisor: studio.advisor ? studio.advisor.state : null };
+  const unsaved = !studio.holds(held);
   async function onSave() {
     setState({ status: "saving" });
     try {
-      const result = await saveScenario(dealId, current);
+      const result = await saveScenario(dealId, studio.toSave());
       if (result.ok) {
         setHeld(result.kept ? current : null);
         setState({ status: "idle" });
