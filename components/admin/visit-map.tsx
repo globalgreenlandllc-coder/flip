@@ -32,7 +32,8 @@ export function VisitMap({ pins, tiles }: { pins: Pin[]; tiles: MapTiles | null 
     let gone = false;
     void import("leaflet").then((L) => {
       if (gone || !el.current || map.current) return;
-      const m = L.map(el.current, { scrollWheelZoom: false, attributionControl: true, worldCopyJump: true }).setView([39.5, -98.35], 3);
+      // No zoom animation: Leaflet's remove() leaves its zoom-end timer running, and leaving the page within it threw.
+      const m = L.map(el.current, { scrollWheelZoom: false, attributionControl: true, worldCopyJump: true, zoomAnimation: false }).setView([39.5, -98.35], 3);
       if (tiles) L.tileLayer(tiles.url, { attribution: tiles.attribution, maxZoom: 12 }).addTo(m);
       layer.current = L.layerGroup().addTo(m);
       map.current = m;
@@ -60,7 +61,9 @@ export function VisitMap({ pins, tiles }: { pins: Pin[]; tiles: MapTiles | null 
             .bindPopup(() => popup(pin), { maxWidth: 260 })
             .addTo(layer.current);
         }
-        if (pins.length) map.current.fitBounds(L.latLngBounds(pins.map((p) => [p.lat, p.lng] as [number, number])).pad(0.25), { maxZoom: 8 });
+        // No animation: leaving the page during a zoom left Leaflet finishing it on a removed map (a page error when
+        // the owner pressed "Traffic" right away).
+        if (pins.length) map.current.fitBounds(L.latLngBounds(pins.map((p) => [p.lat, p.lng] as [number, number])).pad(0.25), { maxZoom: 8, animate: false });
         if (el.current) el.current.dataset.pins = String(pins.length);
       };
       draw();

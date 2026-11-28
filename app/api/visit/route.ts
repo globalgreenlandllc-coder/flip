@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 import { kind } from "@/lib/data/asker";
 import { DayOver, adminIds, keyOfTheDay } from "@/lib/visits/keep";
-import { MAX_BODY, MAX_VISITS_AN_ADDRESS, MAX_VISITS_A_DAY, addressId, areaDay, cleanPath, clientAddress, fromOwnPage, looksLikeAProgram, placeFromHeaders, referrerHost, visitorId, visitsPerDay } from "@/lib/visits/visit";
+import { MAX_BODY, MAX_VISITS_AN_ADDRESS, MAX_VISITS_A_DAY, addressId, areaDay, browserOf, campaignFrom, cleanPath, clientAddress, deviceOf, fromOwnPage, looksLikeAProgram, placeFromHeaders, referrerHost, visitorId, visitsPerDay } from "@/lib/visits/visit";
 
 const DAY_MS = 86_400_000;
 
@@ -21,9 +21,9 @@ export async function POST(req: Request) {
   if (Number(header("content-length") ?? 0) > MAX_BODY) return done;
   const text = await req.text().catch(() => "");
   if (text.length > MAX_BODY) return done;
-  let body: { path?: unknown; ref?: unknown } | null = null;
+  let body: { path?: unknown; ref?: unknown; utm?: unknown; ad?: unknown } | null = null;
   try {
-    body = JSON.parse(text) as { path?: unknown; ref?: unknown };
+    body = JSON.parse(text) as { path?: unknown; ref?: unknown; utm?: unknown; ad?: unknown };
   } catch {
     return done;
   }
@@ -38,13 +38,17 @@ export async function POST(req: Request) {
   const address = clientAddress(header);
   const place = placeFromHeaders(header);
   const referrer = referrerHost(body?.ref, header("host"));
+  const campaign = campaignFrom(body);
+  const device = deviceOf(userAgent);
+  const browser = browserOf(userAgent);
   after(async () => {
     try {
       const key = await keyOfTheDay(areaDay(at), at);
       const visitor = visitorId(key, address, userAgent ?? "");
       const source = addressId(key, address);
-      // Who is signed in is asked only to know the owner: no one's account is kept. When the sign-in service cannot
-      // say, a signed-in visit is not kept, rather than count the owner as a visitor.
+      // A signed-in visit keeps its account (the owner's choice, 2026-11-27, for the Traffic view); the sign-in
+      // service is asked which accounts are the owner's. When it cannot say, a signed-in visit is not kept, rather
+      // than count the owner as a visitor.
       let own = false;
       if (userId) {
         const admins = await adminIds();
@@ -55,7 +59,7 @@ export async function POST(req: Request) {
       if ((await db.visit.count({ where: { visitor } })) >= MAX_VISITS_A_DAY) return;
       if ((await db.visit.count({ where: { source } })) >= MAX_VISITS_AN_ADDRESS) return;
       if ((await db.visit.count({ where: { createdAt: { gte: new Date(at.getTime() - DAY_MS) } } })) >= visitsPerDay()) return;
-      await db.visit.create({ data: { createdAt: at, path, visitor, source, own, referrer, ...place } });
+      await db.visit.create({ data: { createdAt: at, path, visitor, source, own, signedIn: Boolean(userId), userId: userId ?? null, device, browser, referrer, ...campaign, ...place } });
     } catch (err) {
       if (!(err instanceof DayOver)) console.error("[visit] not kept", kind(err));
     }

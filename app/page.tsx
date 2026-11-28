@@ -32,6 +32,10 @@ const faq = (realSales: boolean) => [
   { q: "Are the paid plans on sale?", a: "Not yet. RenoFlip is free during the beta. The plans shown under Pricing are what is planned: they are not on sale, no card is asked for, and how many reports the monthly plan includes is not decided yet." },
   { q: "What else is coming?", a: "Planned: white-label reports for agents, an API for platforms, and a published accuracy number for your metro. On your own house: choosing between renovation levels, your crew's prices and the timeline, as the sample on this page shows." },
   { q: "Who can see my deals?", a: "Only you. Photos are analyzed and not used for anything else, and RenoFlip keeps no listing photos." },
+  {
+    q: "What does RenoFlip record about visits?",
+    a: "When you are signed in, RenoFlip keeps your account with each page you open: the page, the time, the city your internet address is in, the kind of device, the browser or app, and the site or ad that sent you. When you are not signed in, it keeps the same without an account, under a code that changes every day; it never keeps your internet address and sets no cookie. Visits are deleted after about 13 months.",
+  },
 ];
 
 const NAV_LINKS = [

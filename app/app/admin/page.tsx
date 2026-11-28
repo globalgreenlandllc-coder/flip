@@ -12,6 +12,7 @@ import { mapTiles } from "@/lib/map-tiles";
 import { visitsPerDay } from "@/lib/visits/visit";
 import { DayBars } from "@/components/admin/day-bars";
 import { VisitMap } from "@/components/admin/visit-map";
+import { AdminSwitch } from "@/components/admin/admin-switch";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { shortDay } from "@/components/ui/format";
 
@@ -162,6 +163,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   return (
     <div className="flex flex-col gap-7" data-admin>
       {/* The design's workspace heading: the eyebrow with its orange line, a big two-tone headline. */}
+      <AdminSwitch on="overview" />
       <div className="flex flex-wrap items-end justify-between gap-6">
         <div className="min-w-0">
           <p className="kicker text-ink-500">Owner · Admin</p>

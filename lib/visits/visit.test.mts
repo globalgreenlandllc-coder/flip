@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_VISITS_PER_DAY, addressId, areaDay, cleanPath, clientAddress, fromOwnPage, looksLikeAProgram, placeFromHeaders, referrerHost, visitorId, visitsPerDay } from "./visit.ts";
+import { DEFAULT_VISITS_PER_DAY, NO_CAMPAIGN, addressId, areaDay, browserOf, campaignFrom, deviceOf, cleanPath, clientAddress, fromOwnPage, looksLikeAProgram, placeFromHeaders, referrerHost, visitorId, visitsPerDay } from "./visit.ts";
 
 const headers = (h: Record<string, string>) => (name: string) => h[name.toLowerCase()] ?? null;
 const CHROME = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -121,4 +121,68 @@ test("only this site's own pages are listened to", () => {
   assert.equal(fromOwnPage(headers({ origin: "https://evil.example", host: "www.renoflip.app" })), false);
   assert.equal(fromOwnPage(headers({ host: "www.renoflip.app" })), false);
   assert.equal(fromOwnPage(headers({ origin: "null", host: "www.renoflip.app" })), false);
+});
+
+test("campaign tags: short, cleaned, the source and medium in lower case; a click id only as yes or no", () => {
+  assert.deepEqual(campaignFrom({ path: "/", utm: { source: " Facebook ", medium: "Paid_Social", campaign: "Decks  Nov\n2026", content: "x".repeat(150) }, ad: true }), {
+    utmSource: "facebook",
+    utmMedium: "paid_social",
+    utmCampaign: "Decks Nov 2026",
+    utmContent: "x".repeat(100),
+    clickFrom: null,
+    adClick: true,
+  });
+  assert.equal(campaignFrom({ click: "facebook", ad: false }).clickFrom, "facebook");
+  assert.equal(campaignFrom({ click: "evil.example" }).clickFrom, null);
+  for (const bad of [null, "x", 3, { utm: "facebook" }, { utm: { source: 7 } }, { ad: "true" }]) assert.deepEqual(campaignFrom(bad), NO_CAMPAIGN, JSON.stringify(bad));
+  assert.deepEqual(campaignFrom({ utm: { source: "   " } }), NO_CAMPAIGN);
+});
+
+test("the device and a short name for the browser or app; never more of the browser's name", () => {
+  const iphoneSafari = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1";
+  const fbIos = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/490.0.0.40.98;FBBV/123]";
+  const igAndroid = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP2A) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/131.0.0.0 Mobile Safari/537.36 Instagram 350.0.0.0.0 Android";
+  const ipad = "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+  const edge = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0";
+  const samsung = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.0.0 Mobile Safari/537.36";
+  const firefox = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.5; rv:132.0) Gecko/20100101 Firefox/132.0";
+  assert.deepEqual([deviceOf(iphoneSafari), browserOf(iphoneSafari)], ["phone", "Safari"]);
+  assert.deepEqual([deviceOf(fbIos), browserOf(fbIos)], ["phone", "Facebook app"]);
+  assert.deepEqual([deviceOf(igAndroid), browserOf(igAndroid)], ["phone", "Instagram app"]);
+  assert.deepEqual([deviceOf(ipad), browserOf(ipad)], ["tablet", "Safari"]);
+  assert.deepEqual([deviceOf(edge), browserOf(edge)], ["computer", "Edge"]);
+  assert.deepEqual([deviceOf(samsung), browserOf(samsung)], ["phone", "Samsung Internet"]);
+  assert.deepEqual([deviceOf(firefox), browserOf(firefox)], ["computer", "Firefox"]);
+  assert.deepEqual([deviceOf(CHROME), browserOf(CHROME)], ["computer", "Chrome"]);
+  assert.deepEqual([deviceOf(null), browserOf(null)], [null, null]);
+});
+
+test("a tag that looks like an identifier is dropped; ordinary campaign names are kept", () => {
+  const kept = (v: string) => campaignFrom({ utm: { campaign: v } }).utmCampaign;
+  assert.equal(kept("Decks Nov 2026"), "Decks Nov 2026");
+  assert.equal(kept("BlackFridayDeckSale"), "BlackFridayDeckSale");
+  assert.equal(kept("someone@example.com"), null);
+  assert.equal(kept("lead_5f3a9c2e7b1d4a6f8e0c"), null);
+  assert.equal(kept("120203456789012345"), null);
+  assert.equal(campaignFrom({ utm: { source: "fb", content: "user 3f9a2c7e1b5d8a4f6c0e9b2a" } }).utmContent, null);
+  // Hyphens and underscores do not hide an id: a UUID, or digits split into groups.
+  assert.equal(campaignFrom({ utm: { content: "550e8400-e29b-41d4-a716-446655440000" } }).utmContent, null);
+  assert.equal(kept("id-1234-5678-9012-3456"), null);
+  assert.equal(kept("lead_9876_5432_1098_7654"), null);
+  // An ordinary name with a year in it is kept.
+  assert.equal(kept("spring-sale-2026-decks"), "spring-sale-2026-decks");
+  assert.equal(kept("decks_fall_2026_video_b"), "decks_fall_2026_video_b");
+});
+
+test("click ids: the network of the first one, and whether a paid-only one was there; fbclid is not one", async () => {
+  const { clickOf } = await import("./click-ids.ts");
+  const q = (s: string) => {
+    const p = new URLSearchParams(s);
+    return clickOf((k) => p.has(k));
+  };
+  assert.deepEqual(q("fbclid=IwAR1"), { click: "facebook", ad: false });
+  assert.deepEqual(q("gclid=Cj0"), { click: "google", ad: true });
+  assert.deepEqual(q("fbclid=IwAR1&ttclid=E"), { click: "tiktok", ad: true });
+  assert.deepEqual(q("msclkid=1"), { click: "bing", ad: true });
+  assert.deepEqual(q("utm_source=x"), { click: null, ad: false });
 });

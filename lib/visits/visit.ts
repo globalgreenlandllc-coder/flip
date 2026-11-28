@@ -1,12 +1,17 @@
 /**
- * A page seen, as the admin page counts it (app/api/visit/route.ts writes it, model Visit keeps it).
+ * A page seen, as the admin pages count it (app/api/visit/route.ts writes it, model Visit keeps it).
  *
  * What is kept, and what is not:
  *   - the page's path, with any id in it replaced, never its query string;
+ *   - on the first page of a visit, the link's campaign tags (utm_source, utm_medium, utm_campaign, utm_content),
+ *     short and cleaned, none that looks like an identifier; which network's click id it carried and whether that
+ *     id is one only paid ads get, never the id itself;
  *   - the city, region and country Vercel reads from the visitor's internet address, and the middle of that city;
  *   - the host of the site the visitor came from, when it is another site;
- *   - whether it was the owner (an admin, lib/admin/access.ts), so the owner's own visits can be left out; nobody
- *     else's account is kept;
+ *   - the kind of device and a short name of the browser or app, read from the browser's name, which is not kept;
+ *   - whether someone was signed in, and if so their account: the owner chose on 2026-11-27 to see who did what
+ *     when signed in. A visitor who is not signed in has no account on the row;
+ *   - whether it was the owner (an admin, lib/admin/access.ts), so the owner's own visits can be left out;
  *   - a fingerprint of the address and the browser, made with a random key of the day that is thrown away when the
  *     day is over (lib/visits/keep.ts): one visitor is counted once a day, and once the key is gone the fingerprint
  *     cannot be worked back to an address, nor matched with another day's. The address itself is never kept, and no
@@ -17,6 +22,7 @@
  */
 import { createHmac } from "node:crypto";
 import { AREA_TIME_ZONE } from "../area";
+import { CLICK_IDS } from "./click-ids";
 
 /** One visitor's pages kept in a day. Past it nothing more of theirs is kept that day. */
 export const MAX_VISITS_A_DAY = 300;
@@ -42,8 +48,8 @@ export function visitsPerDay(env: Record<string, string | undefined> = process.e
 /** How long a visit is kept: a little over a year. */
 export const KEEP_DAYS = 400;
 
-/** The longest message the page sends: a path and where the visitor came from. */
-export const MAX_BODY = 2_048;
+/** The longest message the page sends: a path, where the visitor came from, and the link's campaign tags. */
+export const MAX_BODY = 4_096;
 
 // One for all calls: making it is slow (a page of 50,000 visits asks for it twice a row).
 const DAY_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: AREA_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" });
@@ -186,4 +192,93 @@ export function fromOwnPage(get: (name: string) => string | null): boolean {
   } catch {
     return false;
   }
+}
+
+/** The campaign tags a link carried, as kept: each short, cleaned, or null. */
+export interface Campaign {
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  utmContent: string | null;
+  /** The network whose click id the link carried ("facebook", "google"…); never the id. */
+  clickFrom: string | null;
+  /** The link carried a click id that only a paid ad gets. Facebook's fbclid is not one: Facebook adds it to every link. */
+  adClick: boolean;
+}
+
+export const NO_CAMPAIGN: Campaign = { utmSource: null, utmMedium: null, utmCampaign: null, utmContent: null, clickFrom: null, adClick: false };
+
+const NETWORKS = new Set(CLICK_IDS.map((c) => c.network));
+
+const UUID = /[0-9a-f]{8}[-_]?[0-9a-f]{4}[-_]?[0-9a-f]{4}[-_]?[0-9a-f]{4}[-_]?[0-9a-f]{12}/i;
+
+/**
+ * Whether a tag looks like a person's or a click's identifier rather than a campaign's name: an "@"; a UUID; a run of
+ * 16 or more letters and digits with a digit in it; or, once "-" and "_" are taken out, such a run with 6 or more
+ * digits ("id-1234-5678-9012-3456"). An ordinary name with a year in it ("spring-sale-2026-decks") is kept.
+ */
+export function looksLikeAnId(text: string): boolean {
+  if (text.includes("@") || UUID.test(text)) return true;
+  if ((text.match(/[A-Za-z0-9]{16,}/g) ?? []).some((run) => /\d/.test(run))) return true;
+  return (text.replace(/[-_]/g, "").match(/[A-Za-z0-9]{16,}/g) ?? []).some((run) => (run.match(/\d/g) ?? []).length >= 6);
+}
+
+/**
+ * One tag: printable, single-spaced, at most 100 characters; the source and medium in lower case. A tag that looks
+ * like an identifier is dropped: campaign tags are kept to say which ad, never who.
+ */
+function tag(value: unknown, lower: boolean): string | null {
+  if (typeof value !== "string") return null;
+  let text = value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  if (!text || looksLikeAnId(text)) return null;
+  if (lower) text = text.toLowerCase();
+  return text.slice(0, 100);
+}
+
+/** The campaign tags the page sent for the first page of a visit (components/visit-beacon.tsx). Anything else is dropped. */
+export function campaignFrom(body: unknown): Campaign {
+  if (!body || typeof body !== "object") return NO_CAMPAIGN;
+  const b = body as { utm?: unknown; ad?: unknown; click?: unknown };
+  const utm = b.utm && typeof b.utm === "object" ? (b.utm as Record<string, unknown>) : {};
+  return {
+    utmSource: tag(utm.source, true),
+    utmMedium: tag(utm.medium, true),
+    utmCampaign: tag(utm.campaign, false),
+    utmContent: tag(utm.content, false),
+    clickFrom: typeof b.click === "string" && NETWORKS.has(b.click) ? b.click : null,
+    adClick: b.ad === true,
+  };
+}
+
+/** "phone", "tablet" or "computer", from the browser's name. */
+export function deviceOf(userAgent: string | null): string | null {
+  if (!userAgent) return null;
+  // An Android tablet's browser name has no "Mobile" anywhere in it (a phone's has, wherever "Android" sits).
+  if (/iPad|Tablet|PlayBook|Silk|Kindle/i.test(userAgent) || (/Android/i.test(userAgent) && !/Mobile/i.test(userAgent))) return "tablet";
+  if (/Mobi|iPhone|iPod|Android|Windows Phone/i.test(userAgent)) return "phone";
+  return "computer";
+}
+
+/** A short name for the browser, or for the app whose own browser opened the page. */
+export function browserOf(userAgent: string | null): string | null {
+  if (!userAgent) return null;
+  const apps: [RegExp, string][] = [
+    [/FBAN|FBAV|FB_IAB|FBIOS|FB4A/, "Facebook app"],
+    [/Instagram/, "Instagram app"],
+    [/musical_ly|TikTok|BytedanceWebview|trill_/i, "TikTok app"],
+    [/Snapchat/i, "Snapchat app"],
+    [/LinkedInApp/i, "LinkedIn app"],
+    [/Pinterest/i, "Pinterest app"],
+    [/Telegram/i, "Telegram app"],
+    [/\bLine\//, "LINE app"],
+    [/WhatsApp/i, "WhatsApp"],
+    [/GSA\//, "Google app"],
+    [/SamsungBrowser/i, "Samsung Internet"],
+    [/Edg(e|A|iOS)?\//, "Edge"],
+    [/OPR\/|Opera/, "Opera"],
+    [/Firefox|FxiOS/, "Firefox"],
+    [/CriOS|Chrome\//, "Chrome"],
+    [/Safari\//, "Safari"],
+  ];
+  return apps.find(([re]) => re.test(userAgent))?.[1] ?? "Other browser";
 }

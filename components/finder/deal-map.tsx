@@ -77,7 +77,8 @@ export function DealMap({ homes, selected, onSelect, tiles }: { homes: MapHome[]
     const placed = pins.current;
     void import("leaflet").then((L) => {
       if (gone || !el.current || map.current) return;
-      const m = L.map(el.current, { scrollWheelZoom: false, attributionControl: true }).setView([47.45, -122.3], 9);
+      // No zoom animation: Leaflet's remove() leaves its zoom-end timer running, and leaving the page within it threw.
+      const m = L.map(el.current, { scrollWheelZoom: false, attributionControl: true, zoomAnimation: false }).setView([47.45, -122.3], 9);
       if (tiles) L.tileLayer(tiles.url, { attribution: tiles.attribution, maxZoom: 19 }).addTo(m);
       layer.current = L.layerGroup().addTo(m);
       map.current = m;
