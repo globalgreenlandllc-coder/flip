@@ -9,14 +9,15 @@ import type { ListingInfo } from "@/lib/listing/fetch-listing";
 import type { DataSource } from "@/lib/data/house-data";
 import type { SubjectSources } from "@/lib/listing/subject";
 import { VerdictPill } from "@/components/ui/verdict";
-import { DemoBanner, DemoTag, UntestedBanner } from "@/components/ui/demo";
+import { DemoBanner, DemoTag, EstimateTag, UntestedBanner } from "@/components/ui/demo";
 import { Icon } from "@/components/ui/icon";
 import { CompsTable, DealTable, Narrative, RiskFlags, Sensitivity, SourceBlock, SubjectLine, ValueStats, WithheldNote, money } from "./report-view";
 import { PlanView } from "./plan-view";
-import { resaleWords } from "./resale";
+import { belowTypicalWords, resaleIsEstimate, resaleWords } from "./resale";
 import { AssessmentView, ListingCard } from "./assessment-view";
 import { OfferLab, SaveScenarioButton, useStudio } from "./studio";
-import type { StudioInputs } from "@/lib/engine/studio";
+import { AdvisorPanel, CompsForPlan } from "./advisor";
+import type { OpenScenario } from "@/lib/api/scenario";
 import type { DealPayload } from "@/lib/deals";
 import { SaveDealButton } from "@/components/app/save-deal-button";
 
@@ -63,7 +64,7 @@ export interface ResultViewProps {
    */
   save?: { kind: "new"; payload: DealPayload } | { kind: "saved"; dealId: string };
   /** A saved deal's scenario to open on (lib/api/scenario.ts readScenario). */
-  scenario?: StudioInputs | null;
+  scenario?: OpenScenario | null;
   back?: { href: string; label: string };
 }
 
@@ -247,11 +248,17 @@ function VerdictCard({ report, analysed, changed, editable, onReset, demo, untes
         <div className="flex flex-wrap items-baseline gap-x-2" data-card-row="Resale value" data-resale-basis={deal.resaleBasis ?? "saved"}>
           <dt className="flex items-center gap-1.5 text-ink-700">
             {resale.label}
-            {demo && <DemoTag />}
+            {demo ? <DemoTag /> : resaleIsEstimate(deal) && <EstimateTag />}
           </dt>
           <dd className="tabular font-bold text-ink-950">{money(deal.arv)}</dd>
           {resale.note && <span className="basis-full text-xs text-ink-500" data-resale-note>{resale.note}</span>}
         </div>
+        {/* The owner's decision (2026-11-28): a cost below the typical range is allowed, and said plainly here. */}
+        {deal.costsBelowTypical && deal.costsBelowTypical.length > 0 && (
+          <p className="text-sm font-semibold text-[#b9411d] sm:col-span-2" data-card-below-typical>
+            Your cost is below the typical range for this work: {belowTypicalWords(deal.costsBelowTypical)}.
+          </p>
+        )}
         <p className="text-xs text-ink-500 sm:col-span-2">
           {label} · buying and selling costs, loan interest and holding costs included
         </p>
@@ -269,7 +276,7 @@ function VerdictCard({ report, analysed, changed, editable, onReset, demo, untes
               </button>
             </>
           ) : (
-            <span className="text-ink-500">The analysis&apos; own numbers. Change the price, the timeline or the assumptions below to work the deal again.</span>
+            <span className="text-ink-500">The analysis&apos; own numbers. Change the price, the timeline, the assumptions or the renovation below to work the deal again.</span>
           )}
         </div>
       )}
@@ -316,15 +323,18 @@ function Tabs({ id, tabs, active, onChange }: { id: string; tabs: { key: TabKey;
  * carries (DEMO, UNTESTED, where each fact came from) is kept where it was.
  */
 export function ResultView(p: ResultViewProps) {
-  const [tab, setTab] = useState<TabKey>("overview");
+  const { report, demo, untested } = p;
+  // Deal Studio: the deal worked again in the browser as the person changes the price, the timeline, the assumptions
+  // or (where the result has a plan) the renovation scope.
+  const studio = useStudio(report, demo, p.scenario, p.plan);
+  // Where there is a renovation advisor, it is the first tab and opens first, as in the design (the scope is the core
+  // of the deal); otherwise the full deal math.
+  const [tab, setTab] = useState<TabKey>(studio.advisor ? "plan" : "overview");
   const tabsId = useId();
   const panel = (key: TabKey) => ({ id: `${tabsId}-${key}-panel`, role: "tabpanel", "aria-labelledby": `${tabsId}-${key}`, tabIndex: 0, hidden: tab !== key, "data-panel": key });
-  const { report, demo, untested } = p;
-  // Deal Studio: the deal worked again in the browser as the person changes the price, the timeline or the assumptions.
-  const studio = useStudio(report, demo, p.scenario);
   const shown = studio.shown;
   // A new result once saved: the deal it became, and the scenario it holds (null: the analysis' own numbers).
-  const [savedAs, setSavedAs] = useState<{ id: string; kept: StudioInputs | null } | null>(null);
+  const [savedAs, setSavedAs] = useState<{ id: string; kept: OpenScenario | null } | null>(null);
   const Title = p.titleAs ?? "h2";
   const subject = report.subject;
   const subtitle = p.subtitle ?? houseLine(subject, p.sources, demo);
@@ -334,12 +344,19 @@ export function ResultView(p: ResultViewProps) {
   // Quick numbers with a renovation figure typed: the engine flags a condition-priced renovation only when no figure
   // was given (lib/engine/evaluate.ts, REHAB_FROM_CONDITION), so a saved deal knows it too, without the figure itself.
   const rehabGiven = typeof p.rehabTyped === "number" || !report.riskFlags.some((f) => f.code === "REHAB_FROM_CONDITION");
-  const tabs: { key: TabKey; label: string; count?: number }[] = [
-    { key: "overview", label: "Full deal math" },
-    { key: "plan", label: "Renovation budget" },
-    { key: "comps", label: "Resale & comps" },
-    { key: "risk", label: "Property checks", count: report.riskFlags.length },
-  ];
+  const tabs: { key: TabKey; label: string; count?: number }[] = studio.advisor
+    ? [
+        { key: "plan", label: "Renovation budget" },
+        { key: "comps", label: "Resale & comps" },
+        { key: "overview", label: "Full deal math" },
+        { key: "risk", label: "Property checks", count: report.riskFlags.length },
+      ]
+    : [
+        { key: "overview", label: "Full deal math" },
+        { key: "plan", label: "Renovation budget" },
+        { key: "comps", label: "Resale & comps" },
+        { key: "risk", label: "Property checks", count: report.riskFlags.length },
+      ];
 
   return (
     <section className="space-y-6" data-result>
@@ -363,7 +380,7 @@ export function ResultView(p: ResultViewProps) {
         </div>
         {(p.actions || p.save?.kind === "new") && (
           <div className="flex flex-wrap items-center gap-2.5">
-            {p.save?.kind === "new" && <SaveDealButton payload={p.save.payload} scenario={studio.changed ? studio.inputs : null} onSaved={(id, kept) => setSavedAs({ id, kept })} />}
+            {p.save?.kind === "new" && <SaveDealButton payload={p.save.payload} scenario={studio.changed ? studio.toSave() : null} current={studio.inputs ? { inputs: studio.inputs, advisor: studio.advisor ? studio.advisor.state : null } : null} onSaved={(id, kept) => setSavedAs({ id, kept })} />}
             {p.actions}
           </div>
         )}
@@ -431,8 +448,9 @@ export function ResultView(p: ResultViewProps) {
       </div>
 
       <div {...panel("plan")} className="space-y-8">
+        {studio.advisor && <AdvisorPanel studio={studio} report={report} demo={demo} untested={untested} />}
         {p.assessment && <AssessmentView assessment={p.assessment} />}
-        {p.plan ? (
+        {studio.advisor ? null : p.plan ? (
           <PlanView plan={p.plan} demo={demo} untested={untested} />
         ) : (
           <div className="card p-5 text-sm leading-relaxed text-ink-700" data-plan-none>
@@ -460,6 +478,7 @@ export function ResultView(p: ResultViewProps) {
           <SubjectLine subject={subject} sources={p.sources} conditionFrom={p.conditionFrom} demo={demo} record={p.data?.name} />
           <ValueStats report={shown} demo={demo} untested={untested} analysed={studio.changed ? report.deal : undefined} />
         </div>
+        {studio.advisor && <CompsForPlan studio={studio} report={report} demo={demo} untested={untested} />}
         {p.data && <SourceBlock data={p.data} />}
         <CompsTable report={report} demo={demo} />
       </div>
@@ -481,7 +500,11 @@ export function ResultView(p: ResultViewProps) {
               {demo && <DemoTag className="ml-2 align-middle" />}
             </p>
           </div>
-          <p className="text-sm text-ink-500 sm:max-w-sm">Your price, your timeline, your assumptions, in one place. The resale value stays the analysis&apos;.</p>
+          <p className="text-sm text-ink-500 sm:max-w-sm" data-bar-note>
+            {studio.advisor
+              ? `Your price, your scope, your timeline and assumptions, in one place. ${studio.advisor.state.resale.basis === "analysis" ? "The resale value stays the analysis'." : "The resale is the one set under Renovation budget."}`
+              : "Your price, your timeline, your assumptions, in one place. The resale value stays the analysis'."}
+          </p>
           <div className="sm:ml-auto">
             {p.save?.kind === "saved" ? (
               <SaveScenarioButton dealId={p.save.dealId} studio={studio} kept={p.scenario ?? null} />

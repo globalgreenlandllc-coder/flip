@@ -18,24 +18,7 @@ export function PlanView({ plan, demo = false, untested = false }: { plan: Renov
         {Number.isFinite(plan.headroom) ? `, and the block will pay for about ${money(plan.headroom)} of it` : ""}.{" "}
         <span className="font-medium text-ink-900">{plan.finishAdvice}</span>
       </p>
-      <div className="card mb-3 p-4">
-        <ValueLadder
-          asIs={plan.asIsValue}
-          // Plans saved before 2026-11-28 have no afterPlanValue: their ladder is drawn as it was then.
-          afterPlan={plan.afterPlanValue ?? plan.asIsValue + plan.totals.valueAdded}
-          afterLabel={plan.afterPlanValue === undefined ? undefined : "Resale after this plan · the deal uses this"}
-          arv={plan.asIsValue + plan.uplift}
-          ceiling={Number.isFinite(plan.headroom) ? plan.asIsValue + plan.headroom : null}
-        />
-        {plan.leftBelowPar && (
-          <p className="mt-3 text-xs leading-relaxed text-ink-700" data-left-below-par>
-            {plan.leftBelowPar.length === 0
-              ? "The plan brings every part the photos show below par up to par, so the resale after it is the fully renovated value."
-              : `Left below par by this plan: ${plan.leftBelowPar.map((b) => `${b.label.toLowerCase()} (${b.why === "skipped" ? "left as it is" : "refreshed where a replace was needed"}${b.lost >= 1 ? `, ${money(b.lost)} of resale` : ""})`).join("; ")}.${plan.fullValue !== undefined && plan.afterPlanValue !== undefined && plan.afterPlanValue >= plan.fullValue ? " The block's ceiling stops the value there anyway, so this costs no resale." : ""}`}{" "}
-            Parts not seen in the photos are counted as at par.
-          </p>
-        )}
-      </div>
+      <ScopeLadder plan={plan} />
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-ink-100/60 text-left text-xs uppercase tracking-wide text-ink-500">
@@ -79,5 +62,34 @@ export function PlanView({ plan, demo = false, untested = false }: { plan: Renov
         {untested ? " What each item adds follows the resale estimate above, which has not been accuracy-tested for this area." : ""}
       </p>
     </Block>
+  );
+}
+
+/**
+ * What a plan (or a scope chosen in Deal Studio's advisor) reaches: as-is, after it, fully renovated, the block's ceiling,
+ * and what it leaves below par with what that costs in resale (2026-11-28). `scope`: the words for a scope the person
+ * chose ("this scope") instead of the analysis' plan.
+ */
+export function ScopeLadder({ plan, scope = false, afterLabel }: { plan: RenovationPlan; scope?: boolean; afterLabel?: string }) {
+  const what = scope ? "this scope" : "this plan";
+  return (
+    <div className="card mb-3 p-4" data-scope-ladder>
+      <ValueLadder
+        asIs={plan.asIsValue}
+        // Plans saved before 2026-11-28 have no afterPlanValue: their ladder is drawn as it was then.
+        afterPlan={plan.afterPlanValue ?? plan.asIsValue + plan.totals.valueAdded}
+        afterLabel={plan.afterPlanValue === undefined ? undefined : (afterLabel ?? `Resale after ${what} · the deal uses this`)}
+        arv={plan.asIsValue + plan.uplift}
+        ceiling={Number.isFinite(plan.headroom) ? plan.asIsValue + plan.headroom : null}
+      />
+      {plan.leftBelowPar && (
+        <p className="mt-3 text-xs leading-relaxed text-ink-700" data-left-below-par>
+          {plan.leftBelowPar.length === 0
+            ? `${scope ? "This scope" : "The plan"} brings every part the photos show below par up to par, so the resale after it is the fully renovated value.`
+            : `Left below par by ${what}: ${plan.leftBelowPar.map((b) => `${b.label.toLowerCase()} (${b.why === "skipped" ? "left as it is" : "refreshed where a replace was needed"}${b.lost >= 1 ? `, ${money(b.lost)} of resale` : ""})`).join("; ")}.${plan.fullValue !== undefined && plan.afterPlanValue !== undefined && plan.afterPlanValue >= plan.fullValue ? " The block's ceiling stops the value there anyway, so this costs no resale." : ""}`}{" "}
+          Parts not seen in the photos are counted as at par.
+        </p>
+      )}
+    </div>
   );
 }

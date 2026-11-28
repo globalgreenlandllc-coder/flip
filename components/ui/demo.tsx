@@ -15,6 +15,27 @@ export function DemoTag({ className = "" }: { className?: string }) {
 }
 
 /**
+ * "This figure rests on rough rates" (Deal Studio's advisor, 2026-11-28): a resale estimated for a scope from the plan's
+ * placeholder shares of the uplift, not measured from the sold homes. Beside DEMO or UNTESTED, never instead of them.
+ */
+export function EstimateTag({ className = "" }: { className?: string }) {
+  return (
+    <span title="Estimated with placeholder rates for what each part adds; not measured from these sales" className={`inline-block rounded bg-[#e8eef7] px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase leading-none tracking-wider text-[#2d4a73] ${className}`} data-estimate-tag>
+      Estimate
+    </span>
+  );
+}
+
+/** "Real sold prices, untested method" beside a figure (the same words as the banner, made small). */
+export function UntestedTag({ className = "" }: { className?: string }) {
+  return (
+    <span title="Real sold prices; the method has not been accuracy-tested for this area" className={`inline-block rounded bg-ink-950 px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase leading-none tracking-wider text-white ${className}`} data-untested-tag>
+      Untested
+    </span>
+  );
+}
+
+/**
  * The notice over a demo result. `why`: when real sold prices are connected
  * and this result could not have them, the sentence that says so comes
  * first (lib/data/house-data.ts Fallback).

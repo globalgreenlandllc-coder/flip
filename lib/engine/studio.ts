@@ -13,9 +13,9 @@
  *
  * Pure: no React, no network.
  */
-import type { DealInputs, DealResult, Report } from "./types";
+import type { DealInputs, DealResult, GateReason, Report } from "./types";
 import { costsAt, evaluateDeal } from "./deal";
-import { withGate } from "./gate";
+import { gateReasons, resaleAboveFullReason, withReasons } from "./gate";
 
 /** What the person can change in PR 1 of Deal Studio. Rates are fractions (0.11 = 11%). */
 export interface StudioInputs {
@@ -169,10 +169,32 @@ export function liveNumbers(rehab: number, resale: number, x: StudioInputs, aski
 /**
  * The result with the live deal in place of the analysed one. What the resale value is (after the plan or fully
  * renovated) is carried over. On real sold prices the same gate as the server's applies, so a live deal is never a GO
- * there either (lib/engine/gate.ts): CHECK FIRST with its reasons. A demo keeps its verdict and its DEMO mark.
+ * there either (lib/engine/gate.ts): CHECK FIRST with its reasons. A demo keeps its verdict and its DEMO mark, except
+ * that no GO rests on a resale the person typed above the fully renovated value, on demo numbers either.
  */
-export function liveReport(report: Report, live: DealResult, opts: { demo: boolean }): Report {
-  const deal: DealResult = { ...live, resaleBasis: report.deal.resaleBasis, fullyRenovated: report.deal.fullyRenovated, belowPar: report.deal.belowPar };
+export function liveReport(report: Report, live: DealResult, opts: { demo: boolean; scope?: ScopeNotes }): Report {
+  // A scope changed in the advisor says where its resale comes from and what it leaves below par; else the analysis'.
+  const s = opts.scope;
+  const deal: DealResult = {
+    ...live,
+    resaleBasis: report.deal.resaleBasis,
+    fullyRenovated: report.deal.fullyRenovated,
+    belowPar: s ? s.belowPar : report.deal.belowPar,
+    ...(s?.resaleChoice ? { resaleChoice: s.resaleChoice } : {}),
+    ...(s && s.resaleEstimated !== undefined ? { resaleEstimated: s.resaleEstimated } : {}),
+    ...(s?.costsBelowTypical?.length ? { costsBelowTypical: s.costsBelowTypical } : {}),
+  };
   const next: Report = { ...report, deal };
-  return opts.demo ? next : withGate(next, { areaTested: false, price: isAskingPrice(live.purchasePrice, report.deal.purchasePrice) ? "asking" : "your price" });
+  if (deal.verdict !== "GO") return next;
+  const price = isAskingPrice(live.purchasePrice, report.deal.purchasePrice) ? "asking" : "your price";
+  const typedAbove: GateReason[] = deal.resaleChoice === "mine" && typeof deal.fullyRenovated === "number" && deal.arv > deal.fullyRenovated + 0.5 ? [resaleAboveFullReason(deal.arv, deal.fullyRenovated)] : [];
+  return withReasons(next, opts.demo ? typedAbove : [...gateReasons(next, { areaTested: false }), ...typedAbove], price);
+}
+
+/** What a scope changed in the advisor says about the deal (lib/engine/advisor.ts scopeNotes). */
+export interface ScopeNotes {
+  resaleChoice?: DealResult["resaleChoice"];
+  belowPar?: DealResult["belowPar"];
+  resaleEstimated?: boolean;
+  costsBelowTypical?: DealResult["costsBelowTypical"];
 }
