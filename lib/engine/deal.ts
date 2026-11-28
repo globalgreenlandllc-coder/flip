@@ -44,7 +44,13 @@ export function maxAllowableOffer(arv: number, rehab: number, d: DealInputs): nu
   return numerator / denominator;
 }
 
-export function evaluateDeal(arv: number, d: DealInputs): DealResult {
+/**
+ * `opts.price`: what the price is called in the deciding sentence. "Asking" (the default) when it is the listing's
+ * asking price; Deal Studio passes "Your price" once the person has changed it (lib/engine/studio.ts), so the sentence
+ * never calls their own price the asking price.
+ */
+export function evaluateDeal(arv: number, d: DealInputs, opts: { price?: string } = {}): DealResult {
+  const Price = opts.price ?? "Asking";
   const rehab = d.rehab * (1 + d.hiddenRiskReserve);
   const base = costsAt(d.askingPrice, arv, rehab, d);
   const mao = maxAllowableOffer(arv, rehab, d);
@@ -69,7 +75,7 @@ export function evaluateDeal(arv: number, d: DealInputs): DealResult {
   const gap = d.askingPrice - mao;
   if (base.profit >= d.targetProfit && worstCaseProfit > 0) {
     verdict = "GO";
-    decidingFactor = `Asking is $${fmt(-gap)} under your max offer and the deal survives resale -10% with rehab +20%.`;
+    decidingFactor = `${Price} is $${fmt(-gap)} under your max offer and the deal survives resale -10% with rehab +20%.`;
   } else if (base.profit >= d.targetProfit) {
     verdict = "TIGHT";
     decidingFactor = `Hits target at base case but loses $${fmt(-worstCaseProfit)} if the resale drops 10% and rehab runs 20% over.`;
@@ -78,7 +84,7 @@ export function evaluateDeal(arv: number, d: DealInputs): DealResult {
     decidingFactor = `Profitable but $${fmt(d.targetProfit - base.profit)} short of the $${fmt(d.targetProfit)} target. Offer $${fmt(mao)} or walk.`;
   } else {
     verdict = "PASS";
-    decidingFactor = `Asking is $${fmt(gap)} ABOVE your max offer of $${fmt(mao)}. Projected loss $${fmt(-base.profit)}.`;
+    decidingFactor = `${Price} is $${fmt(gap)} ABOVE your max offer of $${fmt(mao)}. Projected loss $${fmt(-base.profit)}.`;
   }
 
   return {
@@ -99,6 +105,16 @@ export function evaluateDeal(arv: number, d: DealInputs): DealResult {
     askingVsMao: gap,
     sensitivity,
     worstCaseProfit,
+    terms: {
+      rehab: d.rehab,
+      hiddenRiskReserve: d.hiddenRiskReserve,
+      holdingMonths: d.holdingMonths,
+      monthlyHolding: d.monthlyHolding,
+      financing: { rate: d.financing.rate, ltc: d.financing.ltc, points: d.financing.points },
+      closingBuyPct: d.closingBuyPct,
+      closingSellPct: d.closingSellPct,
+      targetProfit: d.targetProfit,
+    },
   };
 }
 

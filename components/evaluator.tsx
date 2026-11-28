@@ -3,7 +3,6 @@
 import { useCallback, useState } from "react";
 import type { Report } from "@/lib/engine/types";
 import { isDemoProvider } from "@/lib/data/demo";
-import { SaveDealButton } from "@/components/app/save-deal-button";
 import { ResultView } from "@/components/report/result-view";
 
 function Field(props: { id: string; label: string; value: string | number; onChange: (v: string) => void; placeholder?: string; prefix?: string; suffix?: string }) {
@@ -102,7 +101,9 @@ export function Evaluator({ initial, initialProvider }: { initial: Report | null
           rehabTyped={ranRehab}
           priceWhat="The price you entered"
           targetSet
-          actions={<SaveDealButton payload={{ report, provider }} />}
+          // Keyed on the run: new numbers open the Studio on them, not on the last run's scenario.
+          key={`${report.deal.purchasePrice}-${report.deal.profit}-${report.deal.maxAllowableOffer}`}
+          save={{ kind: "new", payload: { report, provider } }}
         />
       )}
     </div>

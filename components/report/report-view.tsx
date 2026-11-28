@@ -202,8 +202,16 @@ export function SourceBlock({ data }: { data: DataSource }) {
 }
 
 /** The resale value, the most to offer, the profit at asking and the block's ceiling, as four tiles. */
-export function ValueStats({ report, demo = false, untested = false }: { report: Report; demo?: boolean; untested?: boolean }) {
+/**
+ * The value and what it means for the deal. `analysed`: the analysis' own deal, when Deal Studio shows a changed one
+ * (the person's price, target or assumptions): the offer and profit tiles are the live deal's and name the analysis'
+ * figures beside them.
+ */
+export function ValueStats({ report, demo = false, untested = false, analysed }: { report: Report; demo?: boolean; untested?: boolean; analysed?: Report["deal"] }) {
   const { arv, deal } = report;
+  const atAsking = !analysed || Math.abs(deal.purchasePrice - analysed.purchasePrice) < 0.5;
+  const price = atAsking ? "asking" : "your price";
+  const asAnalysed = (now: number, then: number | undefined) => (analysed && typeof then === "number" && Math.abs(now - then) >= 0.5 ? ` · as analyzed ${money(then)}` : "");
   const real = arv.comps.some((c) => c.sale.address);
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4" data-value-stats>
@@ -215,8 +223,8 @@ export function ValueStats({ report, demo = false, untested = false }: { report:
         value={money(arv.point)}
         sub={`${money(arv.low)} – ${money(arv.high)} · ${arv.confidence} confidence${arv.cappedByCeiling ? " · capped" : ""}${untested ? " · accuracy not measured yet" : ""}${deal.resaleBasis === "after-plan" && deal.arv < arv.point - 0.5 ? ` · the deal uses ${money(deal.arv)}, the resale after this plan` : ""}`}
       />
-      <Stat demo={demo} label="Most you could offer" value={money(deal.maxAllowableOffer)} sub={`asking is ${money(Math.abs(deal.askingVsMao))} ${deal.askingVsMao > 0 ? "above" : "below"}`} tone={deal.askingVsMao > 0 ? "bad" : "good"} />
-      <Stat demo={demo} label="Profit at asking" value={money(deal.profit)} sub={Number.isNaN(deal.roi) ? undefined : `${Math.round(deal.roi * 100)}% on cash`} tone={deal.profit < 0 ? "bad" : undefined} />
+      <Stat demo={demo} label="Most you could offer" value={money(deal.maxAllowableOffer)} sub={`${price} is ${money(Math.abs(deal.askingVsMao))} ${deal.askingVsMao > 0 ? "above" : "below"}${asAnalysed(deal.maxAllowableOffer, analysed?.maxAllowableOffer)}`} tone={deal.askingVsMao > 0 ? "bad" : "good"} />
+      <Stat demo={demo} label={atAsking ? "Profit at asking" : "Profit at your price"} value={money(deal.profit)} sub={`${Number.isNaN(deal.roi) ? "" : `${Math.round(deal.roi * 100)}% on cash`}${asAnalysed(deal.profit, analysed?.profit)}`.replace(/^ · /, "") || undefined} tone={deal.profit < 0 ? "bad" : undefined} />
       <Stat
         demo={demo}
         label="Block ceiling"

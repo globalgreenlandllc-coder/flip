@@ -4,6 +4,7 @@ import type { PhotoAssessment } from "@/lib/vision/schema";
 import type { ListingInfo } from "@/lib/listing/fetch-listing";
 import type { SubjectSources } from "@/lib/listing/subject";
 import type { DataSource } from "@/lib/data/house-data";
+import type { StoredScenario } from "@/lib/api/scenario";
 
 /** Everything needed to re-render a saved deal. Stored as JSON. */
 export interface DealPayload {
@@ -17,6 +18,12 @@ export interface DealPayload {
   data?: DataSource;
   /** Where each fact about the house came from: the listing, the caller, or the provider's record. */
   subjectSources?: SubjectSources;
+  /**
+   * The person's Deal Studio scenario (2026-11-28): their price, timeline, target and assumptions, with the numbers the
+   * server worked out from them (lib/api/scenario.ts). Absent: the deal is shown as analysed. The Deal row's columns
+   * always hold the analysis' numbers.
+   */
+  scenario?: StoredScenario;
 }
 
 /**

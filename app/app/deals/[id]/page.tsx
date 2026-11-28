@@ -7,6 +7,7 @@ import { ResultView } from "@/components/report/result-view";
 import { DeleteDealButton } from "@/components/app/delete-deal-button";
 import { money } from "@/components/ui/format";
 import { AREA_TIME_ZONE } from "@/lib/area";
+import { readScenario } from "@/lib/api/scenario";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,9 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
       subtitle={`Asking ${money(deal.askingPrice)} · saved ${saved}${quick ? " · quick numbers, no photos" : ""}`}
       back={{ href: "/app/deals", label: "Back to my deals" }}
       actions={<DeleteDealButton id={deal.id} />}
+      // Deal Studio: the person's saved scenario, if one is kept, to open on; saving replaces it (one per deal).
+      save={{ kind: "saved", dealId: deal.id }}
+      scenario={readScenario(payload.scenario)}
     />
   );
 }
