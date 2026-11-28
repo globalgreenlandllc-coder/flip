@@ -6,10 +6,10 @@
  */
 const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 
-export function ValueLadder({ asIs, afterPlan, arv, ceiling }: { asIs: number; afterPlan: number; arv: number; ceiling: number | null }) {
+export function ValueLadder({ asIs, afterPlan, afterLabel, arv, ceiling }: { asIs: number; afterPlan: number; afterLabel?: string; arv: number; ceiling: number | null }) {
   const rows: { label: string; value: number; bar: string; strong?: boolean; note?: string }[] = [
     { label: "As-is today", value: asIs, bar: "bg-ink-300" },
-    { label: "After this plan", value: afterPlan, bar: "bg-brand-500", strong: true },
+    { label: afterLabel ?? "After this plan", value: afterPlan, bar: "bg-brand-500", strong: true },
     { label: "Fully renovated, per comps", value: arv, bar: "bg-ink-400" },
   ];
   if (ceiling !== null && Number.isFinite(ceiling)) {

@@ -13,6 +13,12 @@ export interface EvaluateOptions {
   deal: Omit<DealInputs, "rehab"> & { rehab?: number };
   /** The search tiers to widen through. Default: the demo's four. */
   tiers?: CompCriteria[];
+  /**
+   * The resale value the deal is worked out on, when a renovation plan says what its work reaches
+   * (lib/engine/renovation.ts afterPlanValue). Without it the deal uses the comps' fully renovated value, the work
+   * taken as bringing the house up to the renovated homes it is compared with.
+   */
+  resale?: { afterPlan: number; leftBelowPar: { label: string; why: "skipped" | "refresh-only"; lost: number }[] };
 }
 
 const DEFAULT_MAX_RENOVATION_SPREAD = 0.15;
@@ -27,12 +33,36 @@ export function evaluate(opts: EvaluateOptions): Report {
   const arv = estimateArv(subject, sales, asOf, config, { tiers });
   const rehab = rehabFromCondition(subject.condition, subject.sqft, config);
   const dealInputs: DealInputs = { ...opts.deal, rehab: opts.deal.rehab ?? rehab.likely };
-  const deal = evaluateDeal(arv.point, dealInputs);
+  // The value the deal is worked out on: what the planned work reaches, or else the fully renovated value.
+  const afterPlan = opts.resale && Number.isFinite(opts.resale.afterPlan) && Number.isFinite(arv.point) ? Math.min(opts.resale.afterPlan, arv.point) : null;
+  const deal = evaluateDeal(afterPlan ?? arv.point, dealInputs);
+  deal.resaleBasis = afterPlan !== null ? "after-plan" : "fully-renovated";
+  deal.fullyRenovated = arv.point;
+  if (afterPlan !== null) {
+    const left = opts.resale!.leftBelowPar;
+    deal.belowPar = left.length === 0 ? "none" : afterPlan >= arv.point ? "absorbed" : "costs";
+  }
+  const resaleName = afterPlan !== null ? "resale after this plan" : "the fully renovated value";
 
   const riskFlags: RiskFlag[] = [];
   const narrative: string[] = [];
 
   narrative.push(`VERDICT: ${deal.verdict}. ${deal.decidingFactor}`);
+  if (!Number.isNaN(arv.point)) {
+    if (afterPlan === null) {
+      narrative.push("The deal uses the fully renovated value: it takes the renovation (typed in, or priced from the condition) as bringing the house up to the renovated homes it is compared with.");
+    } else {
+      const left = opts.resale!.leftBelowPar;
+      const names = left.map((b) => `${b.label.toLowerCase()} (${b.why === "skipped" ? "left as it is" : "refreshed where a replace was needed"})`).join(", ");
+      if (deal.belowPar === "none") {
+        narrative.push(`Resale after this plan $${fmt(afterPlan)}: the plan brings every part the photos show below par up to par, so it is the fully renovated value.`);
+      } else if (deal.belowPar === "absorbed") {
+        narrative.push(`Resale after this plan $${fmt(afterPlan)}: the plan leaves ${names} below par, but the block's ceiling stops the value at $${fmt(arv.point)} anyway, so that costs no resale here.`);
+      } else {
+        narrative.push(`Resale after this plan $${fmt(afterPlan)}, not the fully renovated $${fmt(arv.point)}: the plan leaves ${names} below par, and a buyer pays less for that. The deal is worked out on $${fmt(afterPlan)}.`);
+      }
+    }
+  }
 
   if (Number.isNaN(arv.point)) {
     const widest = tiers[tiers.length - 1];
@@ -117,7 +147,7 @@ export function evaluate(opts: EvaluateOptions): Report {
   }
 
   narrative.push(
-    `Deal: purchase $${fmt(deal.purchasePrice)} + rehab $${fmt(deal.rehabWithReserve)} + holding $${fmt(deal.holdingCost)} + financing $${fmt(deal.financingCost)} + closing $${fmt(deal.closingBuy + deal.closingSell)} = $${fmt(deal.totalCost)} all-in against ARV $${fmt(deal.arv)}.`,
+    `Deal: purchase $${fmt(deal.purchasePrice)} + rehab $${fmt(deal.rehabWithReserve)} + holding $${fmt(deal.holdingCost)} + financing $${fmt(deal.financingCost)} + closing $${fmt(deal.closingBuy + deal.closingSell)} = $${fmt(deal.totalCost)} all-in against ${resaleName} $${fmt(deal.arv)}.`,
   );
   narrative.push(`Max allowable offer at $${fmt(dealInputs.targetProfit)} target profit: $${fmt(deal.maxAllowableOffer)}.`);
 

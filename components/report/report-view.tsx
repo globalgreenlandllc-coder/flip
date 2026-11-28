@@ -1,4 +1,5 @@
 import type { GateReason, PropertyFacts, Report, RiskFlag } from "@/lib/engine/types";
+import { resaleWords } from "./resale";
 import type { DataSource } from "@/lib/data/house-data";
 import type { SubjectKey, SubjectSources } from "@/lib/listing/subject";
 import { AREA_TIME_ZONE } from "@/lib/area";
@@ -206,7 +207,14 @@ export function ValueStats({ report, demo = false, untested = false }: { report:
   const real = arv.comps.some((c) => c.sale.address);
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4" data-value-stats>
-      <Stat demo={demo} label="Resale value (ARV)" value={money(arv.point)} sub={`${money(arv.low)} – ${money(arv.high)} · ${arv.confidence} confidence${arv.cappedByCeiling ? " · capped" : ""}${untested ? " · accuracy not measured yet" : ""}`} />
+      {/* The comps' value is the house fully renovated. Where the deal is worked out on what the plan reaches, the tile
+          says so and names that value too (2026-11-28). A deal saved before then shows it as it was. */}
+      <Stat
+        demo={demo}
+        label={deal.resaleBasis ? "Fully renovated value (ARV)" : "Resale value (ARV)"}
+        value={money(arv.point)}
+        sub={`${money(arv.low)} – ${money(arv.high)} · ${arv.confidence} confidence${arv.cappedByCeiling ? " · capped" : ""}${untested ? " · accuracy not measured yet" : ""}${deal.resaleBasis === "after-plan" && deal.arv < arv.point - 0.5 ? ` · the deal uses ${money(deal.arv)}, the resale after this plan` : ""}`}
+      />
       <Stat demo={demo} label="Most you could offer" value={money(deal.maxAllowableOffer)} sub={`asking is ${money(Math.abs(deal.askingVsMao))} ${deal.askingVsMao > 0 ? "above" : "below"}`} tone={deal.askingVsMao > 0 ? "bad" : "good"} />
       <Stat demo={demo} label="Profit at asking" value={money(deal.profit)} sub={Number.isNaN(deal.roi) ? undefined : `${Math.round(deal.roi * 100)}% on cash`} tone={deal.profit < 0 ? "bad" : undefined} />
       <Stat
@@ -311,7 +319,7 @@ export function DealTable({ report, demo = false }: { report: Report; demo?: boo
         <Row k="Buying and selling costs" v={money(deal.closingBuy + deal.closingSell)} />
         <div className="my-2 border-t border-ink-200" />
         <Row k="Total project cost" v={money(deal.totalCost)} bold />
-        <Row k="Resale value (ARV)" v={money(deal.arv)} />
+        <Row k={resaleWords(deal).label} v={money(deal.arv)} />
         <div className={`mt-3 flex items-center justify-between rounded-xl px-4 py-3 ${deal.profit < 0 ? "bg-[#fbeceb]" : "bg-[#fff1ea]"}`}>
           <span className="text-sm font-bold text-ink-900">Profit at the asking price</span>
           <span className={`tabular text-2xl font-bold tracking-tight ${deal.profit < 0 ? "text-pass" : "text-ink-950"}`}>{money(deal.profit)}</span>

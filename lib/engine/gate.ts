@@ -69,7 +69,7 @@ export function withGate(report: Report, ctx: GateContext): Report {
   const { deal } = report;
   // The reasons as one sentence: each without its full stop, the later ones without their capital.
   const why = reasons.map((r, i) => (i === 0 ? r.message : r.message[0].toLowerCase() + r.message.slice(1)).replace(/\.$/, "")).join("; and ");
-  const decidingFactor = `The numbers work at this price: asking is $${fmt(-deal.askingVsMao)} under the max offer, and the deal survives ARV -10% with rehab +20%. It is not a GO yet: ${why}.`;
+  const decidingFactor = `The numbers work at this price: asking is $${fmt(-deal.askingVsMao)} under the max offer, and the deal survives resale -10% with rehab +20%. It is not a GO yet: ${why}.`;
   return {
     ...report,
     deal: { ...deal, verdict: "CHECK FIRST", decidingFactor, withheld: reasons },

@@ -19,6 +19,21 @@ export interface DealPayload {
   subjectSources?: SubjectSources;
 }
 
+/**
+ * The deal's figures as kept in the Deal table's columns. `arv` is the resale the deal was worked out on (after the
+ * plan for an analysis, fully renovated for Quick numbers: report.deal.arv), so a card's margin is the result page's
+ * margin. Null when the report does not hold a usable deal. Rows saved before 2026-11-28 hold the fully renovated
+ * value there, which was then also the value their deal used.
+ */
+export function dealColumns(report: Report | undefined | null): { askingPrice: number; verdict: string; arv: number; maxOffer: number; profit: number } | null {
+  const deal = report?.deal;
+  if (!deal) return null;
+  const cols = { askingPrice: deal.purchasePrice, verdict: deal.verdict, arv: deal.arv, maxOffer: deal.maxAllowableOffer, profit: deal.profit };
+  if (!["GO", "TIGHT", "PASS", "CHECK FIRST"].includes(cols.verdict)) return null;
+  if (![cols.askingPrice, cols.arv, cols.maxOffer, cols.profit].every((n) => typeof n === "number" && Number.isFinite(n))) return null;
+  return cols;
+}
+
 /** The most deals one person can keep. A ceiling on the table, far above what a person saves by hand. */
 export const MAX_SAVED_DEALS = 500;
 

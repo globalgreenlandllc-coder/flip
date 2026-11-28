@@ -13,6 +13,7 @@ import { DemoBanner, DemoTag, UntestedBanner } from "@/components/ui/demo";
 import { Icon } from "@/components/ui/icon";
 import { CompsTable, DealTable, Narrative, RiskFlags, Sensitivity, SourceBlock, SubjectLine, ValueStats, WithheldNote, money } from "./report-view";
 import { PlanView } from "./plan-view";
+import { resaleWords } from "./resale";
 import { AssessmentView, ListingCard } from "./assessment-view";
 
 export interface PhotosUsed {
@@ -161,12 +162,14 @@ function decisionHeading(deal: Report["deal"], demo: boolean, targetSet: boolean
  * is the report's own; in a demo each one carries DEMO.
  */
 function VerdictCard({ report, demo, untested, targetSet }: { report: Report; demo: boolean; untested: boolean; targetSet: boolean }) {
-  const { deal, arv } = report;
+  const { deal } = report;
   const { offerFor } = targetWords(deal, targetSet);
   // Below zero, no price reaches the target: said in words, never as a negative price.
   const noPrice = deal.maxAllowableOffer < 0;
   const label = demo ? "Demo numbers" : untested ? "Real sold prices · untested estimate" : "Estimate";
-  const margin = arv.point > 0 ? `${((deal.profit / arv.point) * 100).toFixed(1)}%` : "—";
+  // Margin on the resale the deal is worked out on (deal.arv: after the plan, or fully renovated).
+  const margin = deal.arv > 0 ? `${((deal.profit / deal.arv) * 100).toFixed(1)}%` : "—";
+  const resale = resaleWords(deal);
   return (
     <div className="rounded-[14px] border border-ink-200 bg-white p-5 sm:p-7" data-verdict-card>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -225,12 +228,13 @@ function VerdictCard({ report, demo, untested, targetSet }: { report: Report; de
           </dt>
           <dd className={`tabular font-bold ${deal.worstCaseProfit < 0 ? "text-pass" : "text-ink-950"}`}>{money(deal.worstCaseProfit)}</dd>
         </div>
-        <div className="flex flex-wrap items-baseline gap-x-2" data-card-row="Resale value">
+        <div className="flex flex-wrap items-baseline gap-x-2" data-card-row="Resale value" data-resale-basis={deal.resaleBasis ?? "saved"}>
           <dt className="flex items-center gap-1.5 text-ink-700">
-            Resale value
+            {resale.label}
             {demo && <DemoTag />}
           </dt>
-          <dd className="tabular font-bold text-ink-950">{money(arv.point)}</dd>
+          <dd className="tabular font-bold text-ink-950">{money(deal.arv)}</dd>
+          {resale.note && <span className="basis-full text-xs text-ink-500" data-resale-note>{resale.note}</span>}
         </div>
         <p className="text-xs text-ink-500 sm:text-right">
           {label} · buying and selling costs, loan interest and holding costs included

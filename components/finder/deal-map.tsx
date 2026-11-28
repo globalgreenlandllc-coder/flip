@@ -35,7 +35,7 @@ function popupContent(home: MapHome): HTMLElement {
   if (home.profit !== null) line(`${home.heat === "hot" ? "Your target is reached" : home.profit > 0 ? "Some profit, short of your target" : "No profit at the asking price"}: ${money(home.profit)} left at asking`, home.heat === "hot" ? "font-medium text-orange-700" : "");
   else line(home.why ?? "Cannot be valued.", "text-ink-500");
   if (home.maxOffer !== null) line(`Most you could pay for your target, on that value: ${money(home.maxOffer)}`);
-  line("A first look: the repair is your guess, no photos read.", "text-[11px] text-ink-500");
+  line("A first look: the repair is your guess, no photos read. A full analysis may come out lower once its renovation plan is priced.", "text-[11px] text-ink-500");
   const links = document.createElement("div");
   links.className = "flex gap-3 pt-1";
   // Both in a new tab: the search stays where it is. Full analysis's click leaves the note that starts the analysis

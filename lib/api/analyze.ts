@@ -318,7 +318,13 @@ export function createAnalyzeHandler(deps: AnalyzeDeps) {
       config: data.config,
     });
 
-    const worked = evaluate({ subject, sales: data.sales, asOf, config: data.config, tiers: data.tiers, deal: { ...mergeDeal(DEFAULT_DEAL_TERMS, input.deal), askingPrice, rehab: plan.rehab.likely } });
+    // The deal is worked out on what the PLANNED work reaches (renovation.ts afterPlanValue), not on the fully
+    // renovated value: a plan that leaves a part below par does not sell for what a fully renovated house does.
+    const worked = evaluate({
+      subject, sales: data.sales, asOf, config: data.config, tiers: data.tiers,
+      deal: { ...mergeDeal(DEFAULT_DEAL_TERMS, input.deal), askingPrice, rehab: plan.rehab.likely },
+      resale: plan.afterPlanValue === undefined ? undefined : { afterPlan: plan.afterPlanValue, leftBelowPar: plan.leftBelowPar ?? [] },
+    });
     // Real sold prices, and a method no area has been accuracy-tested with yet: the numbers may work, a GO may not be given.
     const report = demo ? worked : withGate(worked, { areaTested: false });
 
@@ -337,7 +343,7 @@ export function createAnalyzeHandler(deps: AnalyzeDeps) {
     ];
     report.narrative.splice(1, 0,
       `Photos: ${assessment.summary}`,
-      `Renovation: $${Math.round(plan.totals.costLikely).toLocaleString("en-US")} likely (${Math.round(plan.totals.costLow).toLocaleString("en-US")} to ${Math.round(plan.totals.costHigh).toLocaleString("en-US")}) adds about $${Math.round(plan.totals.valueAdded).toLocaleString("en-US")}. ${plan.finishAdvice}`,
+      `Renovation: $${Math.round(plan.totals.costLikely).toLocaleString("en-US")} likely (${Math.round(plan.totals.costLow).toLocaleString("en-US")} to ${Math.round(plan.totals.costHigh).toLocaleString("en-US")}) taking the house to about $${Math.round(report.deal.arv).toLocaleString("en-US")}. ${plan.finishAdvice}`,
     );
 
     outcome.status = "ok";

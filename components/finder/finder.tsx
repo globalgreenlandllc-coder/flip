@@ -130,7 +130,7 @@ export function Finder({ connected, tiles }: { connected: boolean; tiles: MapTil
   return (
     <div className="space-y-6">
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900" data-finder-untested>
-        <span className="font-semibold">A first look, not a verdict.</span> Each home is compared with real homes of its kind sold within a mile of it in the last year, in the zip codes you search (public records run about three months behind, and do not say what shape a home sold in), by a method not yet tested against real flips. No photos are read: the repair is the one you choose below. A hot home is a home to look at, never a deal to make. Check it with a full analysis before you offer.
+        <span className="font-semibold">A first look, not a verdict.</span> Each home is compared with real homes of its kind sold within a mile of it in the last year, in the zip codes you search (public records run about three months behind, and do not say what shape a home sold in), by a method not yet tested against real flips. No photos are read: the repair is the one you choose below, and the value is what homes like it sold for, as if the work brought it up to them. A full analysis may come out lower once its renovation plan is priced. A hot home is a home to look at, never a deal to make. Check it with a full analysis before you offer.
       </div>
 
       {!connected && (
