@@ -193,15 +193,15 @@ function fallbackFor(err: Unavailable, ask: HouseAsk): Fallback {
   const type = err.detail.propertyType;
   const messages: Record<FallbackCode, string> = {
     "no-address": "No address came with this listing, so real sold prices could not be looked up. Paste the listing link or the listing page to get them.",
-    "not-found": `The public records Renoflip reads (through RentCast) have no property at ${where}. Check the address on the listing; a home in a building needs its unit number.`,
+    "not-found": `The public records RenoFlip reads (through RentCast) have no property at ${where}. Check the address on the listing; a home in a building needs its unit number.`,
     // A record did come back. It is not said to be missing: it could not be told to be this house's.
-    "not-matched": `The public records Renoflip reads (through RentCast) answered ${where} with the record of ${shown(err.detail.answered ?? "another address")}, which Renoflip could not tell to be the same home, so it was not used. Check the address on the listing; a home in a building needs its unit number.`,
+    "not-matched": `The public records RenoFlip reads (through RentCast) answered ${where} with the record of ${shown(err.detail.answered ?? "another address")}, which RenoFlip could not tell to be the same home, so it was not used. Check the address on the listing; a home in a building needs its unit number.`,
     "other-date": `Real sold prices are read as they stand today, so a valuation dated ${ask.asOf} cannot be built on them.`,
-    budget: `Renoflip's real sold-price lookups are used up for now${opens}.`,
+    budget: `RenoFlip's real sold-price lookups are used up for now${opens}.`,
     "your-share": `You have used your share of real sold-price lookups for now${opens}.`,
-    unavailable: "The service Renoflip reads real sold prices from did not answer just now. Run it again in a few minutes to get them.",
-    refused: "The service Renoflip reads real sold prices from turned Renoflip away. That is ours to fix, and running it again will not help until it is.",
-    "not-a-house": `Public records list ${where} as ${type === "Land" ? "land" : type === "Apartment" ? "an apartment building" : "a multi-family property"}, and Renoflip values single homes only.`,
+    unavailable: "The service RenoFlip reads real sold prices from did not answer just now. Run it again in a few minutes to get them.",
+    refused: "The service RenoFlip reads real sold prices from turned RenoFlip away. That is ours to fix, and running it again will not help until it is.",
+    "not-a-house": `Public records list ${where} as ${type === "Land" ? "land" : type === "Apartment" ? "an apartment building" : "a multi-family property"}, and RenoFlip values single homes only.`,
     "no-size": `Neither the listing nor the public record gives the living area of ${where}, so it could not be compared with sold homes.`,
     "no-prices": `The public records around ${where} give the dates homes sold on but not the prices (some states do not publish them), so there are no real sold prices to compare with.`,
   };

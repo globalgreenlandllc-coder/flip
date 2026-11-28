@@ -33,7 +33,7 @@ export function gateReasons(report: Report, ctx: GateContext): GateReason[] {
   if (!ctx.areaTested) {
     reasons.push({
       code: "AREA_UNTESTED",
-      message: "Renoflip's resale estimate has not been tested against real completed flips in this area yet.",
+      message: "RenoFlip's resale estimate has not been tested against real completed flips in this area yet.",
       clears: "The area's accuracy test (not run yet). Until then, check the sold homes below yourself or with an agent.",
     });
   }

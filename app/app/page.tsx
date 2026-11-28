@@ -6,7 +6,7 @@ import { isDemoProvider, isUntestedProvider } from "@/lib/data/demo";
 import { limitsFromEnv, usageSummary, type UsageSummary } from "@/lib/usage/limits";
 import { prismaUsageStore } from "@/lib/usage/prisma-store";
 import { DealCard, type DealSummary } from "@/components/app/deal-card";
-import { QuickStart } from "@/components/app/quick-start";
+import { StartDeal } from "@/components/app/start-deal";
 import { DemoBanner, DemoTag, UntestedBanner } from "@/components/ui/demo";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { moneyShort } from "@/components/ui/format";
@@ -50,11 +50,11 @@ async function savedDeals(userId: string | null): Promise<{ list: DealSummary[];
 function Tile({ label, icon, value, unit, note, demo }: { label: string; icon: IconName; value: string; unit?: string; note: string; demo?: boolean }) {
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-ink-200 bg-white px-5 py-5" data-tile={label}>
-      <div className="flex items-center justify-between text-[13px] text-[#78867e]">
+      <div className="flex items-center justify-between text-[13px] text-[#67717a]">
         <span>{label}</span>
-        <Icon name={icon} className="h-[18px] w-[18px] text-[#81917f]" />
+        <Icon name={icon} className="h-[18px] w-[18px] text-[#8a9396]" />
       </div>
-      <p className="tabular text-3xl font-bold tracking-tight text-ink-900">
+      <p className="tabular text-2xl font-bold tracking-tight text-ink-900 sm:text-3xl">
         {value}
         {unit && <span className="ml-1.5 text-sm font-medium text-ink-500">{unit}</span>}
         {demo && <DemoTag className="ml-2" />}
@@ -81,19 +81,26 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="space-y-7">
-      <div className="flex flex-wrap items-end justify-between gap-5">
-        <div>
-          <p className="eyebrow mb-2.5">Your next move</p>
-          <h1 className="page-title">Good opportunities start here.</h1>
-          <p className="page-lede">A clearer view of your deals, and a plan for your next flip.</p>
+      {/* The design's workspace home: a big two-line heading, what the workspace is for beside it. */}
+      <div className="flex flex-wrap items-end justify-between gap-6 pb-2">
+        <div className="min-w-0">
+          <p className="kicker text-ink-500">Your investment workspace</p>
+          <h1 className="mt-5 text-[40px] font-semibold leading-[1.04] tracking-[-0.055em] text-ink-950 sm:text-[56px] xl:text-[64px]">
+            Find the house.
+            <br />
+            <span className="text-[#7d878c]">See the whole opportunity.</span>
+          </h1>
         </div>
-        <Link href="/app/analyze" className="btn-primary">
-          <Icon name="plus" className="h-4 w-4" />
-          New analysis
-        </Link>
+        <div className="flex max-w-[17rem] flex-col items-start gap-4">
+          <p className="text-sm leading-relaxed text-ink-500">Your buying limit, renovation plan and potential profit, together.</p>
+          <Link href="/app/analyze" className="btn-primary">
+            <Icon name="plus" className="h-4 w-4" />
+            New analysis
+          </Link>
+        </div>
       </div>
 
-      <QuickStart />
+      <StartDeal />
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <Tile label="Saved deals" icon="home" value={unread ? "—" : String(deals.total)} note={unread ? "Could not be read just now." : deals.total ? "Every house you saved, with its verdict." : "Save an analysis and it shows up here."} />
@@ -143,7 +150,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
           <div className="card grid grid-cols-1 gap-6 p-6 md:grid-cols-3" data-overview-empty>
             {[
               { n: "1", t: "Paste a listing", d: "A link from Zillow, Redfin, Realtor.com or a brokerage site, in the box above." },
-              { n: "2", t: "Add its photos", d: "Drag them from the listing's gallery. Renoflip reads the condition room by room." },
+              { n: "2", t: "Add its photos", d: "Drag them from the listing's gallery. RenoFlip reads the condition room by room." },
               { n: "3", t: "Read the plan and the numbers", d: "What to fix, what it costs, what homes like it sold for, and the most you can offer." },
             ].map((s) => (
               <div key={s.n} className="flex gap-3.5">
@@ -186,7 +193,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
           ) : (
             <ul className="mt-4 divide-y divide-ink-200 border-t border-ink-200 text-sm">
               <li className="flex gap-4 py-4">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#eef3ee] text-ink-950">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#eceee9] text-ink-950">
                   <Icon name="file" className="h-[18px] w-[18px]" />
                 </span>
                 <div>
@@ -195,7 +202,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
                 </div>
               </li>
               <li className="flex gap-4 py-4">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#eef3ee] text-ink-950">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#eceee9] text-ink-950">
                   <Icon name="alert" className="h-[18px] w-[18px]" />
                 </span>
                 <div>
@@ -207,16 +214,16 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
           )}
         </section>
 
-        <section className="flex flex-col rounded-[14px] border border-[#dfe8d6] bg-[#eef4e6] p-6">
+        <section className="flex flex-col rounded-[14px] border border-[#f4d9cd] bg-[#fff1ea] p-6">
           <div className="flex items-start justify-between gap-4">
-            <p className="eyebrow text-[#5f7b55]">Find your next one</p>
-            <Icon name="map" className="h-7 w-7 text-[#79a957]" />
+            <p className="eyebrow text-[#b9411d]">Find your next one</p>
+            <Icon name="map" className="h-7 w-7 text-[#ff6a3d]" />
           </div>
           <h2 className="mt-4 text-[26px] font-bold leading-tight tracking-tight text-ink-900">
             Homes for sale.
             <br />A first look at each.
           </h2>
-          <p className="mt-3 text-sm leading-relaxed text-ink-700">Pick zip codes, a price range and the profit you want. Renoflip puts every home on a map, the promising ones first.</p>
+          <p className="mt-3 text-sm leading-relaxed text-ink-700">Pick zip codes, a price range and the profit you want. RenoFlip puts every home on a map, the promising ones first.</p>
           <Link href="/app/find" className="mt-auto inline-flex items-center gap-1 pt-5 text-sm font-bold text-ink-950">
             Open Find deals <Icon name="chevron-right" className="h-4 w-4" />
           </Link>

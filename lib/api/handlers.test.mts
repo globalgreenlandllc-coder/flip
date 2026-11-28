@@ -750,7 +750,7 @@ test("analyze: when real sold prices cannot be had for a house, it gets the demo
   const unknown = await r.analyze({ listing: { ...PASTED, address: "9 Nowhere Rd, Fixture Falls, WA 98000" }, photos: HOUSE.photos });
   assert.equal(unknown.status, 200);
   assert.deepEqual([unknown.body.provider, unknown.body.demo, unknown.body.untested, unknown.body.fallback.code, unknown.body.data], ["synthetic", true, false, "not-found", undefined]);
-  assert.match(unknown.body.warning, /^The public records Renoflip reads \(through RentCast\) have no property at 9 Nowhere Rd, Fixture Falls, WA 98000\. Check the address on the listing; a home in a building needs its unit number\. Demo numbers\./);
+  assert.match(unknown.body.warning, /^The public records RenoFlip reads \(through RentCast\) have no property at 9 Nowhere Rd, Fixture Falls, WA 98000\. Check the address on the listing; a home in a building needs its unit number\. Demo numbers\./);
   // A demo is a demo: its verdict is the deal math's, marked DEMO by whoever shows it, and no real fact is claimed.
   assert.ok(["GO", "TIGHT", "PASS"].includes(unknown.body.report.deal.verdict));
   assert.equal(r.seen.told[0].yearBuilt, undefined);
@@ -763,7 +763,7 @@ test("analyze: when real sold prices cannot be had for a house, it gets the demo
   assert.equal((await r.analyze({ listing: PASTED, photos: HOUSE.photos })).body.demo, false);
   const late = await r.analyze({ listing: { ...PASTED, address: "101 Sample St, Fixture Falls, WA 98000" }, photos: HOUSE.photos });
   assert.deepEqual([late.status, late.body.demo, late.body.fallback.code], [200, true, "budget"]);
-  assert.match(late.body.warning, /^Renoflip's real sold-price lookups are used up for now; more open up on December 11\. Demo numbers\./);
+  assert.match(late.body.warning, /^RenoFlip's real sold-price lookups are used up for now; more open up on December 11\. Demo numbers\./);
   assert.equal(r.data.requests.filter((q) => q.outcome.status !== "free").length, 2, "nothing was spent past the budget");
 });
 
@@ -836,13 +836,13 @@ test("analyze with real sold prices: what the person is told matches how far the
   const short = withRentcast([subjectRecord(), ...oddHomes], { requests: 2 });
   const out = await short.analyze({ listing: PASTED, photos: HOUSE.photos });
   assert.deepEqual([out.status, out.body.demo, out.body.fallback.code], [200, true, "budget"]);
-  assert.match(out.body.warning, /^Renoflip's real sold-price lookups are used up for now/);
+  assert.match(out.body.warning, /^RenoFlip's real sold-price lookups are used up for now/);
 
   // And when not even the demo can value the house as described, the reason real prices were not had is still said.
   const neither = withRentcast([subjectRecord(), ...soldHomes(2)], { requests: 2 });
   const none = await neither.analyze({ listing: PASTED, photos: HOUSE.photos, subject: { beds: 30, baths: 30 } });
   assert.equal(none.status, 422);
-  assert.match(none.body.error, /^Renoflip's real sold-price lookups are used up for now; more open up on December 11\. No usable comps for this property\.$/);
+  assert.match(none.body.error, /^RenoFlip's real sold-price lookups are used up for now; more open up on December 11\. No usable comps for this property\.$/);
 });
 
 test("analyze with real sold prices: where the listing and the public record disagree, the result says so", async () => {
@@ -924,7 +924,7 @@ test("analyze: a home from the deal finder whose photos cannot be found says so,
   const r = rig();
   const res = await r.analyze({ listing: FROM_FINDER });
   assert.equal(res.status, 400);
-  assert.equal(res.body.error, "Renoflip could not find this listing's photos online by its address (608 Sample St, Fixture Falls, WA 98000). Open the home on Zillow, drag its photos into the drop zone, and run it again.");
+  assert.equal(res.body.error, "RenoFlip could not find this listing's photos online by its address (608 Sample St, Fixture Falls, WA 98000). Open the home on Zillow, drag its photos into the drop zone, and run it again.");
   // The AI was not asked, and the run is on record as free: it does not count against the month.
   assert.deepEqual([r.seen.ai.length, r.store.runs.map((run) => run.outcome.status)], [0, ["free"]]);
   // With photos of its own, a finder home is not looked up at all.
@@ -957,7 +957,7 @@ test("analyze: a page found by a finder home's address is used only when it says
     const res = await r.analyze({ listing: FROM_FINDER });
     if (why) {
       assert.equal(res.status, 400, name);
-      assert.equal(res.body.error, `Renoflip found a page for 608 Sample St, Fixture Falls, WA 98000 on Estately, but ${why}, so its photos were not used. Open the home on Zillow, drag its photos into the drop zone, and run it again.`, name);
+      assert.equal(res.body.error, `RenoFlip found a page for 608 Sample St, Fixture Falls, WA 98000 on Estately, but ${why}, so its photos were not used. Open the home on Zillow, drag its photos into the drop zone, and run it again.`, name);
       // Its photos were not even fetched, and nothing was spent.
       assert.deepEqual([r.seen.photoFetches.flat(), r.seen.ai.length, r.store.runs.map((run) => run.outcome.status)], [[], 0, ["free"]], name);
     } else {

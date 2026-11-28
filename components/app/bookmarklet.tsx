@@ -34,7 +34,7 @@ export function Bookmarklet() {
         title="Drag me to your bookmarks bar"
       >
         <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M3 11.5 12 4l9 7.5M5 10.5V20h14v-9.5" /></svg>
-        Send to Renoflip
+        Send to RenoFlip
       </a>
       <span>
         <span className="font-medium text-ink-900">One click from any listing:</span> drag this button to your bookmarks bar. On a Zillow or Redfin page, click it and the photos, price and facts land here.

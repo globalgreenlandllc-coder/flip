@@ -378,7 +378,7 @@ test("an answer about the house next door is not this house's record, however th
     const data = await t.ask({ address });
     assert.deepEqual([data.demo, data.fallback?.code], [true, "not-matched"], address);
     // The person is not told that the records have no such property: a record came back, and it is named.
-    assert.match(data.fallback!.message, /answered .+ with the record of 4823 Orchard Loop Rd, Fixture Falls, WA 98000, which Renoflip could not tell to be the same home, so it was not used\./);
+    assert.match(data.fallback!.message, /answered .+ with the record of 4823 Orchard Loop Rd, Fixture Falls, WA 98000, which RenoFlip could not tell to be the same home, so it was not used\./);
     assert.doesNotMatch(data.fallback!.message, /have no property/);
   }
   assert.ok(!t.asked().some((a) => a.startsWith("sales")), "and no search is paid for around the wrong house");
@@ -437,14 +437,14 @@ test("land and apartment buildings are not valued as houses", async () => {
   const t = connected([subjectRecord({ propertyType: "Land" }), ...soldHomes(40)]);
   const data = await t.ask();
   assert.deepEqual([data.demo, data.fallback?.code], [true, "not-a-house"]);
-  assert.match(data.fallback!.message, /as land, and Renoflip values single homes only/);
+  assert.match(data.fallback!.message, /as land, and RenoFlip values single homes only/);
   assert.deepEqual(t.asked(), ["property"], "no search is paid for a property that will not be valued");
 
   for (const [propertyType, words] of [["Apartment", "as an apartment building"], ["Multi-Family", "as a multi-family property"]] as const) {
     const other = connected([subjectRecord({ propertyType }), ...soldHomes(40)]);
     const got = await other.ask();
     assert.deepEqual([got.demo, got.fallback?.code, other.asked()], [true, "not-a-house", ["property"]], propertyType);
-    assert.ok(got.fallback!.message.includes(`${words}, and Renoflip values single homes only`), got.fallback!.message);
+    assert.ok(got.fallback!.message.includes(`${words}, and RenoFlip values single homes only`), got.fallback!.message);
   }
   // A condo, a townhouse and a manufactured home are homes, each compared with its own kind.
   for (const propertyType of ["Condo", "Townhouse", "Manufactured"]) {
@@ -526,7 +526,7 @@ test("the service down: the demo's data, and a request that got no answer is cou
     t.api.fail = { status };
     const turnedAway = await t.ask();
     assert.equal(turnedAway.fallback?.code, "refused");
-    assert.match(turnedAway.fallback!.message, /turned Renoflip away\. That is ours to fix, and running it again will not help/);
+    assert.match(turnedAway.fallback!.message, /turned RenoFlip away\. That is ours to fix, and running it again will not help/);
   }
 
   // An answer that cannot be read was billed all the same, and is not kept as if it were an answer.

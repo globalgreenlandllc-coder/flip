@@ -12,9 +12,9 @@ function Field(props: { id: string; label: string; value: string | number; onCha
       <label className="label" htmlFor={props.id}>
         {props.label}
       </label>
-      <div className="flex items-center rounded-[10px] border border-[#dce4dd] bg-white focus-within:border-ink-950 focus-within:shadow-[0_0_0_3px_rgb(21_61_53_/_0.1)]">
+      <div className="flex items-center rounded-[10px] border border-[#dde0dc] bg-white focus-within:border-ink-950 focus-within:shadow-[0_0_0_3px_rgb(16_24_32_/_0.1)]">
         {props.prefix && <span className="pl-3 text-sm text-ink-400">{props.prefix}</span>}
-        <input id={props.id} className="w-full bg-transparent px-3 py-2.5 text-[15px] font-semibold text-ink-900 outline-none placeholder:font-normal placeholder:text-[#9aa49d]" value={props.value} placeholder={props.placeholder} onChange={(e) => props.onChange(e.target.value)} inputMode="numeric" />
+        <input id={props.id} className="w-full bg-transparent px-3 py-2.5 text-[15px] font-semibold text-ink-900 outline-none placeholder:font-normal placeholder:text-[#98a0a3]" value={props.value} placeholder={props.placeholder} onChange={(e) => props.onChange(e.target.value)} inputMode="numeric" />
         {props.suffix && <span className="pr-3 text-sm text-ink-400">{props.suffix}</span>}
       </div>
     </div>
@@ -74,7 +74,7 @@ export function Evaluator({ initial, initialProvider }: { initial: Report | null
           e.preventDefault();
           void run();
         }}
-        className="card grid grid-cols-2 gap-4 p-5 shadow-[0_8px_30px_#143d3508] sm:p-6 md:grid-cols-6"
+        className="card grid grid-cols-2 gap-4 p-5 shadow-[0_8px_30px_#10182008] sm:p-6 md:grid-cols-6"
         data-quick-form
       >
         <Field id="asking" label="Purchase price" prefix="$" value={askingPrice} onChange={(v) => setAskingPrice(Number(v))} />
@@ -83,7 +83,7 @@ export function Evaluator({ initial, initialProvider }: { initial: Report | null
         <Field id="hold" label="Project length" suffix="mo" value={holdingMonths} onChange={(v) => setHoldingMonths(Number(v))} />
         <Field id="rate" label="Loan interest" suffix="%" value={rate} onChange={(v) => setRate(Number(v))} />
         <div className="flex items-end">
-          <button type="submit" disabled={busy} className="btn-primary w-full">
+          <button type="submit" disabled={busy} className="btn-accent w-full">
             {busy ? "Running…" : "Run the numbers"}
           </button>
         </div>
@@ -101,6 +101,7 @@ export function Evaluator({ initial, initialProvider }: { initial: Report | null
           subtitle="A made-up house in a made-up area: the numbers show how the deal math works, not what a real house is worth."
           rehabTyped={ranRehab}
           priceWhat="The price you entered"
+          targetSet
           actions={<SaveDealButton payload={{ report, provider }} />}
         />
       )}

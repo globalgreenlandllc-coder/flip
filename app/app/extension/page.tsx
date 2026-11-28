@@ -18,14 +18,14 @@ export default function ExtensionPage() {
         <p className="eyebrow mb-2.5">One click from any listing</p>
         <h1 className="page-title">Browser button</h1>
         <p className="page-lede">
-          Zillow and Redfin let your browser read their pages but block servers. The Chrome extension reads the listing through your browser and hands it to Renoflip, so pasting a link just works. It only talks to listing sites and to Renoflip.
+          Zillow and Redfin let your browser read their pages but block servers. The Chrome extension reads the listing through your browser and hands it to RenoFlip, so pasting a link just works. It only talks to listing sites and to RenoFlip.
         </p>
       </div>
 
       <div className="card space-y-5 p-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#eef3ee] text-ink-950">
+            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#eceee9] text-ink-950">
               <Icon name="puzzle" className="h-5 w-5" />
             </span>
             <div>

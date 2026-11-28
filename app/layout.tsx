@@ -23,13 +23,13 @@ const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: { default: "Renoflip: see the potential, know the profit", template: "%s · Renoflip" },
-  description: "Turn a listing into a renovation plan, the most you can offer, and the numbers behind them: real sold prices, your costs, and what to check before you buy.",
+  title: { default: "RenoFlip: know what to pay, see what you keep", template: "%s · RenoFlip" },
+  description: "The investment workspace for house flips: the most you can offer, the renovation plan read from the photos, and the profit left after every project cost. Sold prices from public records where a house can be looked up, with an estimate not yet accuracy-tested; free during beta.",
   openGraph: {
-    siteName: "Renoflip",
+    siteName: "RenoFlip",
     type: "website",
-    title: "Renoflip: see the potential, know the profit",
-    description: "Paste a listing, add the photos. A renovation plan, the most you can offer, and what to check, worked out from real sold prices.",
+    title: "RenoFlip: know what to pay, see what you keep",
+    description: "Paste a listing, add the photos: a renovation plan, the most you can offer, and what to check. Sold prices from public records where a house can be looked up; the estimate is not yet accuracy-tested.",
   },
   twitter: { card: "summary_large_image" },
 };
@@ -41,18 +41,28 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <ClerkProvider
           appearance={{
             variables: {
-              colorPrimary: "#153d35",
-              colorForeground: "#162e28",
+              // The sign-in button in the design's orange with ink letters, set by Clerk's own colour settings (a
+              // class on its button can lose to Clerk's own styles).
+              colorPrimary: "#ff6a3d",
+              colorPrimaryForeground: "#111416",
+              colorRing: "#b9411d",
+              colorForeground: "#141c22",
               colorBackground: "#ffffff",
-              colorNeutral: "#162e28",
+              colorNeutral: "#141c22",
               colorInput: "#ffffff",
               borderRadius: "0.6rem",
               fontFamily: "var(--font-jakarta), 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif",
             },
             elements: {
               card: "shadow-none border border-ink-200 rounded-2xl",
-              formButtonPrimary: "bg-ink-950 hover:bg-[#245648] text-white font-semibold normal-case",
-              footerActionLink: "text-ink-950 font-semibold",
+              formButtonPrimary: "font-bold normal-case shadow-none",
+              // Text links: #b9411d (5.5:1 on white), not the button's orange (2.85:1).
+              footerActionLink: { color: "#b9411d", fontWeight: 600 },
+              formFieldAction: { color: "#b9411d" },
+              formResendCodeLink: { color: "#b9411d" },
+              identityPreviewEditButton: { color: "#b9411d" },
+              formButtonReset: { color: "#b9411d" },
+              backLink: { color: "#b9411d" },
             },
           }}
         >

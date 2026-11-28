@@ -264,7 +264,7 @@ export function Analyzer({ prefill, startLink, initialUsage }: { prefill?: Prefi
 
   return (
     <div className="space-y-8">
-      <form onSubmit={run} onPaste={handlePaste} className="card p-5 shadow-[0_8px_30px_#143d3508] sm:p-6">
+      <form onSubmit={run} onPaste={handlePaste} className="card p-5 shadow-[0_8px_30px_#10182008] sm:p-6">
         <div className="grid gap-5 lg:grid-cols-[1fr_220px]">
           <div className="space-y-5">
             <div>
@@ -345,7 +345,7 @@ export function Analyzer({ prefill, startLink, initialUsage }: { prefill?: Prefi
               </p>
             )}
             {read && (
-              <p className={`rounded-lg border p-3 text-xs ${readPhotos ? "border-brand-200 bg-brand-50 text-brand-700" : "border-amber-200 bg-amber-50 text-amber-800"}`} data-form-read>
+              <p className={`rounded-lg border p-3 text-xs ${readPhotos ? "border-[#cfe3c4] bg-[#eef6ea] text-[#2f5a24]" : "border-amber-200 bg-amber-50 text-amber-800"}`} data-form-read>
                 {readHow}: {readPhotos} photo{readPhotos === 1 ? "" : "s"}
                 {read.address ? ` · ${read.address}` : ""}
                 {read.beds ? ` · ${read.beds} bd` : ""}
@@ -354,7 +354,7 @@ export function Analyzer({ prefill, startLink, initialUsage }: { prefill?: Prefi
                 {read.read?.via === "finder" ? (
                   // The deal finder hands over a listing record: it never has a description or photos, and the place to get the photos is the listing.
                   <>
-                    . The deal finder gives no photos: Renoflip looks for this listing&apos;s photos by its address. If it cannot find them, open the home on{" "}
+                    . The deal finder gives no photos: RenoFlip looks for this listing&apos;s photos by its address. If it cannot find them, open the home on{" "}
                     <a href={zillowHref(read.address ?? "")} target="_blank" rel="noreferrer noopener" className="underline" data-form-zillow>
                       Zillow
                     </a>{" "}
@@ -364,7 +364,7 @@ export function Analyzer({ prefill, startLink, initialUsage }: { prefill?: Prefi
                   <>
                     {read.description && read.description.source !== "meta" ? " · description kept" : " · no description came through"}
                     {read.details?.length ? ` · ${read.details.length} detail line${read.details.length === 1 ? "" : "s"}` : ""}
-                    {readPhotos ? "" : ". No photos came through: drag them from the gallery into the drop zone, or use the Send to Renoflip bookmark."}
+                    {readPhotos ? "" : ". No photos came through: drag them from the gallery into the drop zone, or use the Send to RenoFlip bookmark."}
                   </>
                 )}
               </p>
@@ -373,7 +373,7 @@ export function Analyzer({ prefill, startLink, initialUsage }: { prefill?: Prefi
               <label className="label" htmlFor="asking">Asking price</label>
               <input id="asking" className="input" placeholder="from listing if readable" inputMode="numeric" value={house.price} onChange={(e) => { const price = e.target.value; setHouse((now) => ({ ...now, price })); }} />
             </div>
-            <button type="submit" disabled={!!status} className="btn-primary mt-auto w-full">
+            <button type="submit" disabled={!!status} className="btn-accent mt-auto w-full">
               {status ? (
                 <>
                   <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />

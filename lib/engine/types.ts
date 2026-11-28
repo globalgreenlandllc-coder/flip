@@ -228,6 +228,8 @@ export interface DealResult {
   /** Profit / cash-equivalent cost basis. */
   roi: number;
   maxAllowableOffer: number;
+  /** The profit the max offer was solved for. Absent on deals saved before 2026-11-28 (they did not keep it). */
+  targetProfit?: number;
   askingVsMao: number;
   sensitivity: SensitivityCell[];
   worstCaseProfit: number;

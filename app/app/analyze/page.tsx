@@ -32,7 +32,7 @@ export default async function NewAnalysisPage({ searchParams }: { searchParams: 
       <div className="mb-7">
         <p className="eyebrow mb-2.5">A new possibility</p>
         <h1 className="page-title">New analysis</h1>
-        <p className="page-lede max-w-2xl">Paste the listing and add its photos. Renoflip reads the photos, prices the work, finds what homes like it sold for, and works out what is left for you and the most you can offer.</p>
+        <p className="page-lede max-w-2xl">Paste the listing and add its photos. RenoFlip reads the photos, prices the work, finds what homes like it sold for, and works out what is left for you and the most you can offer.</p>
       </div>
       <Analyzer prefill={prefill} startLink={prefill ? undefined : startLink(params)} initialUsage={usage} />
     </div>

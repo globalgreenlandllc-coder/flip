@@ -1,9 +1,11 @@
-# flip (Renoflip)
+# flip (RenoFlip)
 
 Address in. **GO / TIGHT / PASS** out, with the numbers that back it up.
 
-The product is called **Renoflip** (renoflip.app) since 2026-11-27; the repository, the code, the settings
-(`FLIP_*`) and this README still say flip. Every word a person reads in the app says Renoflip.
+The product is called **RenoFlip** (one word, capital R and F; renoflip.app) since 2026-11-27; the repository, the
+code, the settings (`FLIP_*`) and this README still say flip. Every word a person reads in the app says RenoFlip. Its
+look is the owner's dark orange/ink design of 2026-11-27: colours in `app/globals.css`, the mark in
+`components/ui/logo.tsx`, picture credits in `public/brand/CREDITS.md`.
 
 flip is a deal evaluator for people who buy houses, renovate them, and sell
 them: contractors, small investors, and the agents and lenders who serve

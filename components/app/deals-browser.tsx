@@ -28,7 +28,7 @@ export function DealsBrowser({ deals }: { deals: DealSummary[] }) {
         <label className="flex w-full items-center gap-2.5 rounded-[10px] border border-ink-200 bg-white px-3.5 sm:w-80">
           <Icon name="search" className="h-[18px] w-[18px] text-ink-400" />
           <span className="sr-only">Search your deals</span>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search your deals" className="w-full bg-transparent py-2.5 text-sm outline-none placeholder:text-[#9aa49d]" data-deals-search />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search your deals" className="w-full bg-transparent py-2.5 text-sm outline-none placeholder:text-[#98a0a3]" data-deals-search />
         </label>
         <div className="flex flex-wrap gap-1 rounded-[10px] bg-white/60 p-1" role="group" aria-label="Show deals by verdict">
           {FILTERS.filter((f) => f.key === "all" || count(f.key) > 0).map((f) => (
@@ -38,7 +38,7 @@ export function DealsBrowser({ deals }: { deals: DealSummary[] }) {
               aria-pressed={filter === f.key}
               onClick={() => setFilter(f.key)}
               data-deals-filter={f.key}
-              className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${filter === f.key ? "bg-[#e9f1e6] text-ink-950" : "text-[#78867e] hover:text-ink-950"}`}
+              className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${filter === f.key ? "bg-[#eef0ea] text-ink-950" : "text-[#67717a] hover:text-ink-950"}`}
             >
               {f.label}
               <span className="ml-1.5 text-xs font-medium text-ink-400">{count(f.key)}</span>

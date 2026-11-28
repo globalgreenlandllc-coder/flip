@@ -33,7 +33,7 @@ export function VerdictBadge({ verdict, size = "md", demo = false, untested = fa
   if (!mark) return <span className={`inline-block whitespace-nowrap rounded-lg font-bold tracking-wide ${sz.verdict} ${colour}`}>{verdict}</span>;
   return (
     <span {...(demo ? { "data-demo-verdict": "" } : { "data-untested-verdict": "" })} title={mark.title} className="inline-flex items-stretch overflow-hidden whitespace-nowrap rounded-lg font-bold tracking-wide">
-      <span className={`flex items-center bg-[#0e2a24] uppercase tracking-wider ${mark.tone} ${sz.mark}`}>{mark.word}</span>
+      <span className={`flex items-center bg-[#0b1116] uppercase tracking-wider ${mark.tone} ${sz.mark}`}>{mark.word}</span>
       <span className={`${sz.verdict} ${colour}`}>{verdict}</span>
     </span>
   );
@@ -47,20 +47,21 @@ export const VERDICT_MEANS: Record<Verdict, string> = {
   "CHECK FIRST": "Check before you offer",
 };
 
-const ON_GREEN: Record<Verdict, string> = {
-  GO: "bg-lime text-ink-950",
-  TIGHT: "bg-[#f6d9a8] text-[#5c3c07]",
-  PASS: "bg-[#f4c7c2] text-[#6b1d16]",
-  "CHECK FIRST": "bg-white text-ink-950",
+/** The design's fit chips: soft green, amber and red, and a quiet blue-grey for CHECK FIRST (none of the three yet). */
+const CHIP: Record<Verdict, string> = {
+  GO: "bg-[#d8e9c3] text-[#22361a]",
+  TIGHT: "bg-[#f8ddb9] text-[#5c3c07]",
+  PASS: "bg-[#f5cbc5] text-[#6b1d16]",
+  "CHECK FIRST": "bg-[#e7ecef] text-[#26394a]",
 };
 
 /**
- * The verdict on the result's dark green card: the verdict and what it means, with DEMO or UNTESTED as part of the
+ * The verdict on the result's purchase decision card: the verdict and what it means, with DEMO or UNTESTED as part of the
  * same pill, never apart from it (as with VerdictBadge).
  */
 export function VerdictPill({ verdict, demo = false, untested = false }: { verdict: Verdict; demo?: boolean; untested?: boolean }) {
   const mark = demo ? MARK.demo : untested ? MARK.untested : null;
-  const colour = ON_GREEN[verdict] ?? ON_GREEN["CHECK FIRST"];
+  const colour = CHIP[verdict] ?? CHIP["CHECK FIRST"];
   const means = VERDICT_MEANS[verdict] ?? "";
   return (
     <span
@@ -69,7 +70,7 @@ export function VerdictPill({ verdict, demo = false, untested = false }: { verdi
       title={mark?.title}
       className="inline-flex max-w-full items-stretch overflow-hidden rounded-md text-[13px] font-bold"
     >
-      {mark && <span className={`flex items-center bg-[#0e2a24] px-2 text-[10px] uppercase tracking-wider ${mark.tone}`}>{mark.word}</span>}
+      {mark && <span className={`flex items-center bg-[#0b1116] px-2 text-[10px] uppercase tracking-wider ${mark.tone}`}>{mark.word}</span>}
       <span className={`flex items-center gap-1.5 px-2.5 py-1.5 uppercase tracking-wide ${colour}`}>
         {verdict === "GO" ? "✓ " : ""}
         {verdict}

@@ -5,7 +5,7 @@ import { AREA_TIME_ZONE } from "@/lib/area";
 import { Block, money } from "./report-view";
 
 const HOW_READ: Record<ListingVia, string> = {
-  server: "Read by Renoflip's server",
+  server: "Read by RenoFlip's server",
   browser: "Read through your browser",
   paste: "From the page you pasted",
   button: "Handed over by the button on the listing page",
@@ -13,7 +13,7 @@ const HOW_READ: Record<ListingVia, string> = {
 };
 /** The second way a listing was read, for what the first lacked. */
 const ALSO_READ: Record<ListingVia, string> = {
-  server: "by Renoflip's server",
+  server: "by RenoFlip's server",
   browser: "through your browser",
   paste: "from the page you pasted",
   button: "by the button on the listing page",

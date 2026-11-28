@@ -1,7 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- Renoflip's tab icon: a white "r" and the wordmark's lime full stop on the deep green. -->
-  <rect width="32" height="32" rx="7" fill="#153D35"/>
-  <rect x="8.5" y="9.5" width="4.6" height="13.5" rx="1" fill="#FFFFFF"/>
-  <path d="M13.1 15.2C14 11.6 16.6 9.6 21 9.7V14.3C17.6 14.2 14.6 15.3 13.1 18.4Z" fill="#FFFFFF"/>
-  <circle cx="23.2" cy="21" r="2.6" fill="#E2F5B1"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <!-- RenoFlip's mark (the design of 2026-11-27): an ink roof over an ink F on orange. -->
+  <rect width="48" height="48" rx="13" fill="#ff6a3d"/>
+  <path d="M9 23 24 10l15 13" fill="none" stroke="#101820" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M18 23h15v5H23v4h8v5h-8v6h-5z" fill="#101820"/>
 </svg>

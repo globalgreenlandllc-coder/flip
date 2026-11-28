@@ -35,7 +35,7 @@ export function DealCard({ deal: d }: { deal: DealSummary }) {
       data-deal-card={d.verdict}
       className="group flex flex-col overflow-hidden rounded-[14px] border border-ink-200 bg-white transition duration-200 hover:-translate-y-1 hover:shadow-[0_14px_30px_#153d3512] motion-reduce:transition-none motion-reduce:hover:translate-y-0"
     >
-      <div className="relative h-32 overflow-hidden bg-gradient-to-br from-[#e9f1e7] via-[#dfeadc] to-[#cfdfcb]">
+      <div className="relative h-32 overflow-hidden bg-gradient-to-br from-[#eef0ea] via-[#e3e7df] to-[#d7dcd6]">
         <Icon name="home" className="absolute -bottom-3 -right-2 h-28 w-28 text-white/60 transition-transform duration-300 group-hover:scale-105" strokeWidth={1.2} />
         <div className="absolute left-3 top-3">
           <VerdictBadge verdict={d.verdict as Verdict} size="sm" demo={demo} untested={untested} />
@@ -44,16 +44,28 @@ export function DealCard({ deal: d }: { deal: DealSummary }) {
       <div className="flex flex-1 flex-col p-5">
         <h3 className="line-clamp-2 text-[17px] font-bold leading-snug tracking-tight text-ink-900">{d.title}</h3>
         <p className="mt-1 truncate text-sm text-ink-500">{where}</p>
+        {/* The design's shortlist card: the two numbers that decide, then the margin and the price as rows. */}
         <div className="mt-auto grid grid-cols-2 gap-3 border-t border-ink-200 pt-4">
           <div>
-            <p className="text-xs text-ink-500">Asking price</p>
-            <p className="tabular mt-1 text-xl font-bold tracking-tight text-ink-900">{moneyShort(d.askingPrice)}</p>
+            <p className="text-xs text-ink-500">Maximum buy price</p>
+            <p className="tabular mt-1 text-xl font-bold tracking-tight text-ink-900">{d.maxOffer < 0 ? "None" : moneyShort(d.maxOffer)}</p>
+            {d.maxOffer < 0 && <p className="text-xs text-ink-500">No price reaches the target</p>}
           </div>
-          <div className="text-right">
-            <p className="text-xs text-ink-500">Profit at asking</p>
+          <div>
+            <p className="text-xs text-ink-500">Potential net profit</p>
             <p className={`tabular mt-1 text-xl font-bold tracking-tight ${d.profit < 0 ? "text-pass" : "text-go"}`}>{moneyShort(d.profit)}</p>
           </div>
         </div>
+        <dl className="mt-3 divide-y divide-ink-200 border-t border-ink-200 text-sm">
+          <div className="flex justify-between gap-3 py-2">
+            <dt className="text-ink-500">Profit margin</dt>
+            <dd className="tabular font-semibold text-ink-900">{d.arv > 0 ? `${((d.profit / d.arv) * 100).toFixed(1)}%` : "—"}</dd>
+          </div>
+          <div className="flex justify-between gap-3 py-2">
+            <dt className="text-ink-500">Asking price</dt>
+            <dd className="tabular font-semibold text-ink-900">{moneyShort(d.askingPrice)}</dd>
+          </div>
+        </dl>
       </div>
       <div className="flex items-center justify-between border-t border-ink-200 px-5 py-3 text-xs">
         <span className="text-ink-500">Saved {shortDay(d.createdAt)}</span>

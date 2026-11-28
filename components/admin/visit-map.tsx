@@ -56,7 +56,7 @@ export function VisitMap({ pins, tiles }: { pins: Pin[]; tiles: MapTiles | null 
         const most = pins[0]?.visitors ?? 1;
         // The busiest last, so they lie on top.
         for (const pin of [...pins].reverse()) {
-          L.circleMarker([pin.lat, pin.lng], { radius: radius(pin.visitors, most), color: "#ffffff", weight: 2, fillColor: "#153d35", fillOpacity: 0.78 })
+          L.circleMarker([pin.lat, pin.lng], { radius: radius(pin.visitors, most), color: "#ffffff", weight: 2, fillColor: "#e0522a", fillOpacity: 0.85 })
             .bindPopup(() => popup(pin), { maxWidth: 260 })
             .addTo(layer.current);
         }
@@ -70,5 +70,5 @@ export function VisitMap({ pins, tiles }: { pins: Pin[]; tiles: MapTiles | null 
     };
   }, [pins]);
 
-  return <div ref={el} className="h-[380px] w-full overflow-hidden rounded-xl border border-ink-200 bg-ink-100" data-visit-map role="region" aria-label="Map of where visitors came from" />;
+  return <div ref={el} className="h-[380px] w-full overflow-hidden rounded-[14px] border border-ink-200 bg-ink-100" data-visit-map role="region" aria-label="Map of where visitors came from" />;
 }

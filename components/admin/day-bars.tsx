@@ -20,7 +20,7 @@ export function DayBars({ title, unit, days, values, note }: { title: string; un
   // Not read: said so, never drawn as zeros.
   if (!values) {
     return (
-      <figure className="flex min-w-0 flex-col gap-3 rounded-xl border border-ink-200 bg-white p-5" data-day-bars={title}>
+      <figure className="flex min-w-0 flex-col gap-3 rounded-[14px] border border-ink-200 bg-white p-5 sm:p-6" data-day-bars={title}>
         <figcaption className="text-sm font-bold text-ink-900">{title}</figcaption>
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-admin-unread>
           These numbers could not be read just now. Reload the page to try again.
@@ -33,7 +33,7 @@ export function DayBars({ title, unit, days, values, note }: { title: string; un
   const say = (n: number) => `${n.toLocaleString("en-US")} ${n === 1 ? unit[0] : unit[1]}`;
   const ticks = top >= 2 && top % 2 === 0 ? [top, top / 2, 0] : [top, 0];
   return (
-    <figure className="flex min-w-0 flex-col gap-3 rounded-xl border border-ink-200 bg-white p-5" data-day-bars={title}>
+    <figure className="flex min-w-0 flex-col gap-3 rounded-[14px] border border-ink-200 bg-white p-5 sm:p-6" data-day-bars={title}>
       <figcaption className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <span className="text-sm font-bold text-ink-900">{title}</span>
         <span className="tabular text-xs text-ink-500" data-day-total>
@@ -56,7 +56,7 @@ export function DayBars({ title, unit, days, values, note }: { title: string; un
                 {v > 0 && (
                   <div
                     className="w-full max-w-6 rounded-t-[4px] transition-colors"
-                    style={{ height: `${Math.max(2, (v / top) * 100)}%`, background: at === i ? "#153d35" : "#2f8a5f" }}
+                    style={{ height: `${Math.max(2, (v / top) * 100)}%`, background: at === i ? "#101820" : "#e0522a" }}
                   />
                 )}
               </div>
