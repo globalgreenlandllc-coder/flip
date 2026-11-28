@@ -15,7 +15,6 @@ import { ResultView } from "@/components/report/result-view";
 import { zillowHref } from "@/components/finder/shared";
 import { isUntestedProvider } from "@/lib/data/demo";
 import type { DataSource } from "@/lib/data/house-data";
-import { SaveDealButton } from "@/components/app/save-deal-button";
 import type { UsageSummary } from "@/lib/usage/limits";
 import type { SubjectSources } from "@/lib/listing/subject";
 
@@ -444,7 +443,9 @@ export function Analyzer({ prefill, startLink, initialUsage }: { prefill?: Prefi
           photosUsed={result.photosUsed}
           previews={previews}
           title={result.listing?.address ?? result.listing?.title ?? "This house"}
-          actions={<SaveDealButton payload={{ report: result.report, plan: result.plan, assessment: result.assessment, listing: result.listing, provider: result.provider, subjectSources: result.subjectSources, data: result.data }} />}
+          // Keyed on the result: a new analysis opens the Studio on its own numbers, not the last one's scenario.
+          key={`${result.report.subject.id}-${result.report.deal.purchasePrice}-${result.report.deal.profit}`}
+          save={{ kind: "new", payload: { report: result.report, plan: result.plan, assessment: result.assessment, listing: result.listing, provider: result.provider, subjectSources: result.subjectSources, data: result.data } }}
         />
       )}
     </div>

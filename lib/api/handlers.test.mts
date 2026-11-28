@@ -10,6 +10,7 @@ import { createHouseData, type DataSource, type HouseAsk, type RentcastSettings 
 import type { Fetcher } from "../data/rentcast.ts";
 import { SUBJECT_ADDRESS, fakeRentcast, soldHomes, subjectRecord } from "../data/rentcast-fixtures.mts";
 import { DEFAULT_DEAL_TERMS } from "../engine/index.ts";
+import { studioBase } from "../engine/studio.ts";
 import { DEFAULT_LIMITS, MemoryUsageStore, usageSummary, type UsageLimits, type UsageStore } from "../usage/limits.ts";
 import { PhotoReadError, tidyAssessment, type PhotoContext, type PhotoInput, type PhotoReading } from "../vision/analyze-photos.ts";
 import type { PhotoAssessment } from "../vision/schema.ts";
@@ -146,6 +147,21 @@ test("analyze: a good request is analysed, marked as a demo, and the run is reco
   assert.equal(run.userId, "ann");
   assert.equal(run.kind, "analyze");
   assert.deepEqual({ ...run.outcome, ms: undefined }, { status: "ok", photos: 1, model: "claude-test", inputTokens: 21_000, outputTokens: 1_800, ms: undefined });
+});
+
+test("analyze: the result carries the terms its deal was worked out with, so Deal Studio can work it again in the browser", async () => {
+  const r = rig();
+  const res = await r.analyze(HOUSE);
+  assert.equal(res.status, 200);
+  const { deal } = res.body.report;
+  assert.ok(deal.terms, "deal.terms is in the answer");
+  assert.equal(deal.terms.rehab, (res.body.plan as unknown as { rehab: { likely: number } }).rehab.likely, "the base renovation is the plan's");
+  assert.equal(deal.terms.holdingMonths, DEFAULT_DEAL_TERMS.holdingMonths);
+  assert.equal(deal.terms.targetProfit, DEFAULT_DEAL_TERMS.targetProfit);
+  assert.deepEqual(deal.terms.financing, DEFAULT_DEAL_TERMS.financing);
+  assert.equal((deal.terms as Record<string, unknown>).askingPrice, undefined, "the price is the deal's purchasePrice, not a term");
+  const base = studioBase(res.body.report);
+  assert.equal(base.editable, true, "the terms give back the result's own profit");
 });
 
 test("analyze: a request that is not well-formed is refused before a run is started or anything is fetched", async () => {
@@ -645,6 +661,19 @@ test("evaluate: runs the numbers, says they are a demo, and keeps the loan defau
   assert.ok(Number.isFinite(res.body.report.deal.financingCost) && res.body.report.deal.financingCost > 0);
   assert.ok(Number.isFinite(res.body.report.deal.maxAllowableOffer));
   assert.deepEqual(r.store.runs.map((x) => [x.kind, x.outcome.status]), [["quick", "ok"]]);
+});
+
+test("evaluate: Quick numbers' typed months, rate and target travel back as the deal's terms (Deal Studio opens on them)", async () => {
+  const r = rig();
+  const res = await r.evaluate({ address: "demo", deal: { askingPrice: 700_000, rehab: 60_000, holdingMonths: 9, targetProfit: 40_000, financing: { rate: 0.095 } } });
+  assert.equal(res.status, 200);
+  const t = res.body.report.deal.terms!;
+  assert.ok(t);
+  assert.equal(t.rehab, 60_000);
+  assert.equal(t.holdingMonths, 9);
+  assert.equal(t.targetProfit, 40_000);
+  assert.deepEqual(t.financing, { ...DEFAULT_DEAL_TERMS.financing, rate: 0.095 });
+  assert.equal(studioBase(res.body.report).editable, true);
 });
 
 test("evaluate: facts and sales the caller brings are not called a demo", async () => {

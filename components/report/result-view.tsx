@@ -15,6 +15,10 @@ import { CompsTable, DealTable, Narrative, RiskFlags, Sensitivity, SourceBlock, 
 import { PlanView } from "./plan-view";
 import { resaleWords } from "./resale";
 import { AssessmentView, ListingCard } from "./assessment-view";
+import { OfferLab, SaveScenarioButton, useStudio } from "./studio";
+import type { StudioInputs } from "@/lib/engine/studio";
+import type { DealPayload } from "@/lib/deals";
+import { SaveDealButton } from "@/components/app/save-deal-button";
 
 export interface PhotosUsed {
   uploaded: number;
@@ -51,8 +55,15 @@ export interface ResultViewProps {
   targetSet?: boolean;
   /** What the price beside "most you could offer" is: the listing's asking price, or the price typed in Quick numbers. */
   priceWhat?: string;
-  /** Save, delete: whatever the page offers, top right. */
+  /** Delete and the like: whatever else the page offers, top right. */
   actions?: React.ReactNode;
+  /**
+   * How the result is saved (Deal Studio, 2026-11-28): a new result is saved as a deal, with the person's scenario when
+   * they changed anything; a saved deal saves its scenario.
+   */
+  save?: { kind: "new"; payload: DealPayload } | { kind: "saved"; dealId: string };
+  /** A saved deal's scenario to open on (lib/api/scenario.ts readScenario). */
+  scenario?: StudioInputs | null;
   back?: { href: string; label: string };
 }
 
@@ -161,8 +172,9 @@ function decisionHeading(deal: Report["deal"], demo: boolean, targetSet: boolean
  * offer, the renovation, the resale value and the downside, and the profit margin (profit ÷ resale value). Every figure
  * is the report's own; in a demo each one carries DEMO.
  */
-function VerdictCard({ report, demo, untested, targetSet }: { report: Report; demo: boolean; untested: boolean; targetSet: boolean }) {
+function VerdictCard({ report, analysed, changed, editable, onReset, demo, untested, targetSet }: { report: Report; analysed: Report["deal"]; changed: boolean; editable: boolean; onReset: () => void; demo: boolean; untested: boolean; targetSet: boolean }) {
   const { deal } = report;
+  const atAnalysedPrice = Math.abs(deal.purchasePrice - analysed.purchasePrice) < 0.5;
   const { offerFor } = targetWords(deal, targetSet);
   // Below zero, no price reaches the target: said in words, never as a negative price.
   const noPrice = deal.maxAllowableOffer < 0;
@@ -174,7 +186,7 @@ function VerdictCard({ report, demo, untested, targetSet }: { report: Report; de
     <div className="rounded-[14px] border border-ink-200 bg-white p-5 sm:p-7" data-verdict-card>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-500">Your purchase decision</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-500" data-card-eyebrow>{changed ? "Your scenario" : "Your purchase decision"}</p>
           <p className="mt-2 text-[22px] font-bold leading-snug tracking-[-0.035em] text-ink-950 sm:text-[26px]" data-decision-heading>
             {decisionHeading(deal, demo, targetSet)}
           </p>
@@ -197,7 +209,9 @@ function VerdictCard({ report, demo, untested, targetSet }: { report: Report; de
             {money(deal.profit)}
             {demo && <DemoTag className="ml-2 align-middle" />}
           </strong>
-          <small className="text-xs text-ink-500">{Number.isNaN(deal.roi) ? "At the asking price, after every project cost, before tax" : `At the asking price, after every project cost, before tax. ${Math.round(deal.roi * 100)}% return on the cash you put in.`}</small>
+          <small className="text-xs text-ink-500">
+            {atAnalysedPrice ? "At the asking price" : `At your price of ${money(deal.purchasePrice)}`}, after every project cost, before tax{Number.isNaN(deal.roi) ? "" : `. ${Math.round(deal.roi * 100)}% return on the cash you put in`}.
+          </small>
         </div>
         <div className="flex min-w-0 flex-col gap-2 border-t border-[#dce4de] p-4 sm:p-5 lg:border-l lg:border-t-0">
           <span className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-ink-700">
@@ -219,7 +233,9 @@ function VerdictCard({ report, demo, untested, targetSet }: { report: Report; de
         </div>
       </div>
       {/* Under the row, as the design's line under its numbers: the downside, and what the value rests on. */}
-      <dl className="mt-4 grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-[auto_auto_1fr]">
+      {/* Two columns and a full-width line under them: three columns squeezed the last into one word a line once the
+          resale value gained its note (PR #10). */}
+      <dl className="mt-4 grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
         <div className="flex flex-wrap items-baseline gap-x-2" data-card-row="Downside profit">
           <dt className="flex items-center gap-1.5 text-ink-700">
             <Icon name="info" className="h-4 w-4 text-ink-500" />
@@ -236,48 +252,27 @@ function VerdictCard({ report, demo, untested, targetSet }: { report: Report; de
           <dd className="tabular font-bold text-ink-950">{money(deal.arv)}</dd>
           {resale.note && <span className="basis-full text-xs text-ink-500" data-resale-note>{resale.note}</span>}
         </div>
-        <p className="text-xs text-ink-500 sm:text-right">
+        <p className="text-xs text-ink-500 sm:col-span-2">
           {label} · buying and selling costs, loan interest and holding costs included
         </p>
       </dl>
-    </div>
-  );
-}
-
-/** The asking price and the most you could offer, side by side. The most to offer is built on the resale value, so
- *  in a demo it is as made up as that and says so. */
-function PriceBar({ report, demo, priceWhat, targetSet }: { report: Report; demo: boolean; priceWhat: string; targetSet: boolean }) {
-  const { deal } = report;
-  const { offerFor } = targetWords(deal, targetSet);
-  const gap = Math.round(deal.askingVsMao);
-  const above = gap > 0;
-  return (
-    <div className="card flex flex-wrap items-center gap-x-8 gap-y-3 px-5 py-4" data-price-bar>
-      <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#fff1ea] text-[#c8431f]">
-          <Icon name="home" className="h-5 w-5" />
-        </span>
-        <div>
-          <p className="text-sm font-bold text-ink-900">Asking price</p>
-          <p className="text-xs text-ink-500">{priceWhat}</p>
-        </div>
-        <p className="tabular ml-2 text-2xl font-bold tracking-tight text-ink-900">{money(deal.purchasePrice)}</p>
-      </div>
-      <div className="flex flex-wrap items-center gap-3 sm:ml-auto">
-        <p className="text-sm text-ink-500">
-          {deal.maxAllowableOffer < 0 ? (
-            <span data-price-mao>No price works {offerFor}</span>
-          ) : (
+      {editable && (
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-ink-200 pt-4 text-sm" data-as-analyzed>
+          {changed ? (
             <>
-              Most you could offer {offerFor} <span className="tabular font-bold text-ink-900" data-price-mao>{money(deal.maxAllowableOffer)}</span>
+              <span className="text-ink-700">
+                As analyzed: <span className="font-bold text-ink-950">{analysed.verdict}</span> · {money(analysed.profit)} profit at {money(analysed.purchasePrice)} · maximum buy price {analysed.maxAllowableOffer < 0 ? "none" : money(analysed.maxAllowableOffer)}
+                {demo && <DemoTag className="ml-2 align-middle" />}
+              </span>
+              <button type="button" className="btn-secondary px-3 py-1.5 text-xs sm:ml-auto" onClick={onReset} data-studio-reset>
+                Reset to the analysis
+              </button>
             </>
+          ) : (
+            <span className="text-ink-500">The analysis&apos; own numbers. Change the price, the timeline or the assumptions below to work the deal again.</span>
           )}
-          {demo && <DemoTag className="ml-2 align-middle" />}
-        </p>
-        <span className={`rounded-md px-2.5 py-1 text-xs font-bold ${above ? "bg-[#fbeceb] text-pass" : "bg-[#fff1ea] text-go"}`}>
-          {deal.maxAllowableOffer < 0 ? "Not at any price" : gap === 0 ? "The price is just that" : `The price is ${money(Math.abs(gap))} ${above ? "above" : "below"} it`}
-        </span>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -325,6 +320,11 @@ export function ResultView(p: ResultViewProps) {
   const tabsId = useId();
   const panel = (key: TabKey) => ({ id: `${tabsId}-${key}-panel`, role: "tabpanel", "aria-labelledby": `${tabsId}-${key}`, tabIndex: 0, hidden: tab !== key, "data-panel": key });
   const { report, demo, untested } = p;
+  // Deal Studio: the deal worked again in the browser as the person changes the price, the timeline or the assumptions.
+  const studio = useStudio(report, demo, p.scenario);
+  const shown = studio.shown;
+  // A new result once saved: the deal it became, and the scenario it holds (null: the analysis' own numbers).
+  const [savedAs, setSavedAs] = useState<{ id: string; kept: StudioInputs | null } | null>(null);
   const Title = p.titleAs ?? "h2";
   const subject = report.subject;
   const subtitle = p.subtitle ?? houseLine(subject, p.sources, demo);
@@ -361,15 +361,20 @@ export function ResultView(p: ResultViewProps) {
             </p>
           )}
         </div>
-        {p.actions && <div className="flex flex-wrap items-center gap-2.5">{p.actions}</div>}
+        {(p.actions || p.save?.kind === "new") && (
+          <div className="flex flex-wrap items-center gap-2.5">
+            {p.save?.kind === "new" && <SaveDealButton payload={p.save.payload} scenario={studio.changed ? studio.inputs : null} onSaved={(id, kept) => setSavedAs({ id, kept })} />}
+            {p.actions}
+          </div>
+        )}
       </div>
 
       {demo ? <DemoBanner kind={p.conditionFrom === "record" ? "quick" : "analysis"} why={p.fallbackWhy} /> : untested ? <UntestedBanner /> : null}
 
-      <VerdictCard report={report} demo={demo} untested={untested} targetSet={p.targetSet ?? false} />
+      <VerdictCard report={shown} analysed={report.deal} changed={studio.changed} editable={studio.editable} onReset={studio.reset} demo={demo} untested={untested} targetSet={p.targetSet ?? false} />
 
-      <PriceBar report={report} demo={demo} priceWhat={p.priceWhat ?? "What the listing asks"} targetSet={p.targetSet ?? false} />
-      <WithheldNote reasons={report.deal.withheld} />
+      <OfferLab studio={studio} report={report} demo={demo} priceWhat={p.priceWhat ?? "What the listing asks"} />
+      <WithheldNote reasons={shown.deal.withheld} />
       {differs.map((f, i) => (
         <div key={i} className="flex gap-3 rounded-[14px] border border-[#f0dcb4] bg-[#fff8ea] p-4 text-sm leading-relaxed text-ink-900" data-record-differs>
           <Icon name="alert" className="mt-0.5 h-5 w-5 shrink-0 text-tight" />
@@ -393,15 +398,20 @@ export function ResultView(p: ResultViewProps) {
           <Icon name="sparkle" className="mt-0.5 h-6 w-6 text-[#b9411d]" />
           <div>
             <p className="font-bold text-ink-900" data-deciding>
-              {report.deal.decidingFactor}
+              {shown.deal.decidingFactor}
             </p>
             {p.plan?.finishAdvice && <p className="mt-1.5 text-sm leading-relaxed text-ink-700">{p.plan.finishAdvice}</p>}
           </div>
         </div>
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-          <DealTable report={report} demo={demo} />
-          <Sensitivity report={report} demo={demo} />
+          <DealTable report={shown} demo={demo} />
+          <Sensitivity report={shown} demo={demo} />
         </div>
+        {studio.changed && (
+          <p className="text-sm text-ink-500" data-narrative-as-analyzed>
+            The reasons below are the analysis&apos; own, at its price ({money(report.deal.purchasePrice)}) and its assumptions.
+          </p>
+        )}
         <Narrative report={report} demo={demo} />
         {p.listing && (
           <div className="space-y-2">
@@ -429,7 +439,7 @@ export function ResultView(p: ResultViewProps) {
             {rehabGiven ? (
               <>
                 No photos were read for this one, so there is no room-by-room plan. The deal uses the renovation you entered
-                {typeof p.rehabTyped === "number" ? `, ${money(p.rehabTyped)},` : ""} plus a reserve for what photos cannot show: {money(report.deal.rehabWithReserve)} in all. From the condition on record it would be {money(report.rehab.low)} to {money(report.rehab.high)}, likely {money(report.rehab.likely)}.
+                {typeof p.rehabTyped === "number" ? `, ${money(p.rehabTyped)},` : ""} plus a reserve for what photos cannot show: {money(shown.deal.rehabWithReserve)} in all{studio.changed && Math.abs(shown.deal.rehabWithReserve - report.deal.rehabWithReserve) >= 0.5 ? ` with your reserve (as analyzed ${money(report.deal.rehabWithReserve)})` : ""}. From the condition on record it would be {money(report.rehab.low)} to {money(report.rehab.high)}, likely {money(report.rehab.likely)}.
               </>
             ) : (
               <>
@@ -448,7 +458,7 @@ export function ResultView(p: ResultViewProps) {
             <p className="mt-1 text-sm text-ink-500">The house as it was read, the value drawn from homes like it that sold, and every adjustment.</p>
           </div>
           <SubjectLine subject={subject} sources={p.sources} conditionFrom={p.conditionFrom} demo={demo} record={p.data?.name} />
-          <ValueStats report={report} demo={demo} untested={untested} />
+          <ValueStats report={shown} demo={demo} untested={untested} analysed={studio.changed ? report.deal : undefined} />
         </div>
         {p.data && <SourceBlock data={p.data} />}
         <CompsTable report={report} demo={demo} />
@@ -461,6 +471,28 @@ export function ResultView(p: ResultViewProps) {
         </div>
         <RiskFlags report={report} demo={demo} />
       </div>
+
+      {studio.editable && (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-[14px] border border-ink-200 bg-white px-5 py-4" data-scenario-bar>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-500">Potential net profit{studio.changed ? " · your scenario" : ""}</p>
+            <p className={`tabular text-2xl font-bold tracking-tight ${shown.deal.profit < 0 ? "text-pass" : "text-ink-950"}`} data-bar-profit>
+              {money(shown.deal.profit)}
+              {demo && <DemoTag className="ml-2 align-middle" />}
+            </p>
+          </div>
+          <p className="text-sm text-ink-500 sm:max-w-sm">Your price, your timeline, your assumptions, in one place. The resale value stays the analysis&apos;.</p>
+          <div className="sm:ml-auto">
+            {p.save?.kind === "saved" ? (
+              <SaveScenarioButton dealId={p.save.dealId} studio={studio} kept={p.scenario ?? null} />
+            ) : savedAs ? (
+              <SaveScenarioButton key={savedAs.id} dealId={savedAs.id} studio={studio} kept={savedAs.kept} />
+            ) : p.save?.kind === "new" ? (
+              <p className="text-sm text-ink-500" data-bar-save-hint>{studio.changed ? "Save the deal (top right) to keep this scenario." : "Save the deal (top right) to keep it."}</p>
+            ) : null}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

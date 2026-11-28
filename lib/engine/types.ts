@@ -191,6 +191,13 @@ export interface DealInputs {
 }
 
 /**
+ * The terms a deal was worked out with: everything but the price (DealResult.purchasePrice). `rehab` is the base
+ * renovation before the reserve. Kept on the deal (DealResult.terms) so the browser can work the same deal again live
+ * (lib/engine/studio.ts) without asking the server.
+ */
+export type DealTerms = Omit<DealInputs, "askingPrice">;
+
+/**
  * CHECK FIRST is not a result of the deal math. It stands in for a GO that
  * may not be given yet (lib/engine/gate.ts): the numbers work, and something
  * outside them is still open.
@@ -248,6 +255,8 @@ export interface DealResult {
    * parts below par but the block's ceiling stops the value there anyway; "costs" = what it leaves costs resale.
    */
   belowPar?: "none" | "absorbed" | "costs";
+  /** The terms the deal was worked out with (2026-11-28, Deal Studio). Absent on deals saved before then. */
+  terms?: DealTerms;
 }
 
 export interface RehabRange {

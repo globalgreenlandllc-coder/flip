@@ -53,6 +53,10 @@ input[type="radio"], input[type="checkbox"], input[type="range"] { accent-color:
    grounds (the workspace's rail and its phone menu: they are marked .on-night). */
 :focus-visible { outline: 3px solid #b9411d; outline-offset: 3px; }
 .on-night :focus-visible { outline-color: #ff8b66; }
+/* Deal Studio's fields (components/report/studio.tsx): the ring goes round the whole field, "$" and "%" included,
+   not across the input inside it. */
+.studio-field:focus-within { outline: 3px solid #b9411d; outline-offset: 2px; border-color: var(--color-ink-950); }
+.studio-field input:focus-visible { outline: none; }
 
 .card {
   background: #fff;
