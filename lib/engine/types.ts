@@ -235,6 +235,19 @@ export interface DealResult {
   worstCaseProfit: number;
   /** Set when the deal math said GO and the verdict shown is CHECK FIRST: the reasons a GO was withheld. */
   withheld?: GateReason[];
+  /**
+   * Which resale value `arv` is (2026-11-28): "after-plan" = what the planned renovation reaches (a full analysis);
+   * "fully-renovated" = the comps' renovated value, the work taken as bringing the house up to them (Quick numbers).
+   * Absent on deals saved before 2026-11-28: their `arv` is the fully renovated value.
+   */
+  resaleBasis?: "after-plan" | "fully-renovated";
+  /** The comps' fully renovated value, for comparison with `arv`. Absent on deals saved before 2026-11-28. */
+  fullyRenovated?: number;
+  /**
+   * With "after-plan": "none" = the plan brings every part the photos show below par up to par; "absorbed" = it leaves
+   * parts below par but the block's ceiling stops the value there anyway; "costs" = what it leaves costs resale.
+   */
+  belowPar?: "none" | "absorbed" | "costs";
 }
 
 export interface RehabRange {

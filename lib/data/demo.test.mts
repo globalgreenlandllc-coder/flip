@@ -13,6 +13,9 @@ test("the action that saves a deal asks the rule what it may be saved as, and st
   assert.doesNotMatch(create, /provider:/);
   // The verdict stored is the one the rule saw.
   assert.match(create, /verdict: report\.deal\.verdict,/);
+  // The resale kept is the one the deal was worked out on (lib/deals.ts dealColumns), not the comps' value (2026-11-28).
+  assert.match(create, /arv: columns\.arv,/);
+  assert.doesNotMatch(create, /arv: report\.arv\.point/);
   assert.match(source, /const deal = payload\?\.report\?\.deal;/);
   assert.match(source, /const \{ report \} = payload;/);
 });

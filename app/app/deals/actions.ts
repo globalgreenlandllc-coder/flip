@@ -6,9 +6,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { providerToSave } from "@/lib/data/demo";
 import { rentcastFromEnv } from "@/lib/data/house-data";
-import { MAX_SAVED_DEALS, dealTitle, type DealPayload } from "@/lib/deals";
-
-const VERDICTS = new Set(["GO", "TIGHT", "PASS", "CHECK FIRST"]);
+import { MAX_SAVED_DEALS, dealColumns, dealTitle, type DealPayload } from "@/lib/deals";
 const MAX_PAYLOAD_CHARS = 900_000;
 
 /**
@@ -23,11 +21,9 @@ export async function saveDeal(payload: DealPayload): Promise<SaveDealResult> {
   if (!userId) return { ok: false, error: "Sign in to save deals." };
 
   // The payload comes from the browser: hold it to the shape of a report before it is stored.
+  const columns = dealColumns(payload?.report);
   const deal = payload?.report?.deal;
-  const arv = payload?.report?.arv?.point;
-  if (!deal || !VERDICTS.has(deal.verdict) || ![deal.purchasePrice, deal.maxAllowableOffer, deal.profit, arv].every((n) => typeof n === "number" && Number.isFinite(n))) {
-    return { ok: false, error: "That result could not be saved. Run the analysis again." };
-  }
+  if (!columns || !deal) return { ok: false, error: "That result could not be saved. Run the analysis again." };
   const stored = JSON.stringify(payload);
   if (stored.length > MAX_PAYLOAD_CHARS) return { ok: false, error: "That result is too large to save." };
   if ((await db.deal.count({ where: { userId } })) >= MAX_SAVED_DEALS) return { ok: false, error: `You have ${MAX_SAVED_DEALS} saved deals, the most an account keeps. Delete some to save more.` };
@@ -46,7 +42,8 @@ export async function saveDeal(payload: DealPayload): Promise<SaveDealResult> {
       source: typeof payload.listing?.url === "string" ? payload.listing.url.slice(0, 2_000) : null,
       askingPrice: report.deal.purchasePrice,
       verdict: report.deal.verdict,
-      arv: report.arv.point,
+      // The resale the deal was worked out on, so the card's margin is the result page's (lib/deals.ts dealColumns).
+      arv: columns.arv,
       maxOffer: report.deal.maxAllowableOffer,
       profit: report.deal.profit,
       provider,

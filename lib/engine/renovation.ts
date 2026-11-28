@@ -85,7 +85,31 @@ export interface PlanItem {
   reason: string;
 }
 
+/** A part the plan leaves below par, and the resale that costs (2026-11-28). */
+export interface BelowPar {
+  key: CategoryKey;
+  label: string;
+  /** "skipped": left as it is. "refresh-only": refreshed where a full replace was needed. */
+  why: "skipped" | "refresh-only";
+  /** Resale not reached because of it: the part's whole share of the uplift, or what a refresh does not capture. */
+  lost: number;
+}
+
 export interface RenovationPlan {
+  /**
+   * The resale value the PLANNED work reaches: the comps' fully renovated value less what the plan leaves below par
+   * (leftBelowPar), never above the block's ceiling where it applies. This is the value the deal is worked out on.
+   * Absent on plans saved before 2026-11-28.
+   */
+  afterPlanValue?: number;
+  /** The comps' fully renovated value, capped by the ceiling where it applies: what afterPlanValue is when nothing is left below par. */
+  fullValue?: number;
+  /**
+   * What the plan leaves below par, each with the resale it costs; the costs add up to fullValue − afterPlanValue, so
+   * where the ceiling absorbs a loss the part is listed with less (or $0). Empty when every part the photos show below
+   * par that carries value is brought to par.
+   */
+  leftBelowPar?: BelowPar[];
   /** Value of the house in its current condition. */
   asIsValue: number;
   /** ARV - as-is: the most any renovation can add. */
@@ -222,6 +246,34 @@ export function planRenovation(input: RenovationInput): RenovationPlan {
     }
   }
 
+  // The resale the planned work reaches. The comps value the house as renovated, every part at par. A part the
+  // photos show below par that the plan leaves as it is does not earn its share of the uplift, and a refresh where a
+  // full replace was needed earns only what a refresh captures. Systems are always done (required), and parts already
+  // at par or not seen are counted as at par, as the comps value assumes. The ceiling caps the result where it
+  // applies, so a part skipped only because the block would not pay for it costs nothing: the ceiling already stops
+  // the value there, and it is not taken off twice.
+  const belowPar: BelowPar[] = [];
+  for (const item of items) {
+    const c = costs[item.key];
+    if (c.system || (item.need !== "refresh" && item.need !== "replace")) continue;
+    const share = c.share * uplift;
+    let lost = 0;
+    if (item.action === "skip") lost = share;
+    else if (item.need === "replace" && item.action === "refresh") lost = share * (1 - c.refreshCapture);
+    // A part with no share of the uplift (the basement) costs no resale to leave: it is not listed.
+    if (lost > 0) belowPar.push({ key: item.key, label: c.label, why: item.action === "skip" ? "skipped" : "refresh-only", lost });
+  }
+  const cap = ceiling ? ceiling.value : Number.POSITIVE_INFINITY;
+  const fullValue = Math.min(arvPoint, cap);
+  const shortfall = belowPar.reduce((s, b) => s + b.lost, 0);
+  const afterPlanValue = Math.min(arvPoint - shortfall, cap);
+  // Where the ceiling caps, part or all of what the plan leaves below par lies above what the block pays anyway: each
+  // part's cost in resale is scaled to the real gap, so the parts listed add up to fullValue − afterPlanValue (all of
+  // them $0 when the ceiling absorbs the whole of it).
+  // (No ceiling under the comps' value: the gap is the shortfall itself, scale exactly 1.)
+  const scale = cap >= arvPoint ? 1 : shortfall > 0 ? (fullValue - afterPlanValue) / shortfall : 0;
+  const leftBelowPar = belowPar.map((b) => ({ ...b, lost: b.lost * scale }));
+
   const doing = items.filter((i) => i.action === "replace" || i.action === "refresh" || i.action === "required" || (i.action === "inspect" && i.costLikely > 0));
   const totals = {
     costLow: doing.reduce((s, i) => s + i.costLow, 0),
@@ -253,6 +305,9 @@ export function planRenovation(input: RenovationInput): RenovationPlan {
   items.sort((a, b) => order[a.action] - order[b.action] || b.net - a.net);
 
   return {
+    afterPlanValue,
+    fullValue,
+    leftBelowPar,
     asIsValue,
     uplift,
     headroom,

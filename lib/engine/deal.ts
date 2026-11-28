@@ -69,10 +69,10 @@ export function evaluateDeal(arv: number, d: DealInputs): DealResult {
   const gap = d.askingPrice - mao;
   if (base.profit >= d.targetProfit && worstCaseProfit > 0) {
     verdict = "GO";
-    decidingFactor = `Asking is $${fmt(-gap)} under your max offer and the deal survives ARV -10% with rehab +20%.`;
+    decidingFactor = `Asking is $${fmt(-gap)} under your max offer and the deal survives resale -10% with rehab +20%.`;
   } else if (base.profit >= d.targetProfit) {
     verdict = "TIGHT";
-    decidingFactor = `Hits target at base case but loses $${fmt(-worstCaseProfit)} if ARV drops 10% and rehab runs 20% over.`;
+    decidingFactor = `Hits target at base case but loses $${fmt(-worstCaseProfit)} if the resale drops 10% and rehab runs 20% over.`;
   } else if (base.profit > 0) {
     verdict = "TIGHT";
     decidingFactor = `Profitable but $${fmt(d.targetProfit - base.profit)} short of the $${fmt(d.targetProfit)} target. Offer $${fmt(mao)} or walk.`;
