@@ -31,6 +31,8 @@ const isActive = (item: Item, pathname: string) =>
 /** What the top bar calls the page you are on. */
 export function pageName(pathname: string): string {
   if (/^\/app\/deals\/[^/]+$/.test(pathname)) return "Deal";
+  // The admin's second view keeps the rail's Admin item lit; the top bar says which view it is.
+  if (pathname === "/app/admin/traffic") return "Admin · Traffic";
   const item = [...WORKSPACE, ...TOOLS, ...ADMIN].find((i) => isActive(i, pathname));
   return item?.label ?? "Workspace";
 }

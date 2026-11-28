@@ -141,9 +141,20 @@ input[type="radio"], input[type="checkbox"], input[type="range"] { accent-color:
 }
 .fade-up { animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
+/* The Traffic map's halo around a visitor on the site now, and the live dot. */
+@keyframes rf-pulse {
+  0% { fill-opacity: 0.35; }
+  70% { fill-opacity: 0; }
+  100% { fill-opacity: 0; }
+}
+.rf-pulse { animation: rf-pulse 1.8s ease-out infinite; }
+@keyframes rf-blink { 50% { opacity: 0.35; } }
+.rf-live-dot { animation: rf-blink 1.6s ease-in-out infinite; }
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .fade-up { animation: none; }
+  .rf-pulse, .rf-live-dot { animation: none; }
   .btn-primary:hover:not(:disabled), .btn-secondary:hover:not(:disabled), .btn-lime:hover:not(:disabled), .btn-soft:hover:not(:disabled), .btn-accent:hover:not(:disabled) { transform: none; }
 }
 

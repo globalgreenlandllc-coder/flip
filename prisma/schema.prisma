@@ -79,9 +79,11 @@ model DataRequest {
   @@index([userId, createdAt])
 }
 
-/// One page seen, for the admin page's numbers and map (lib/visits/visit.ts has the rules). No internet address, no
-/// account and no cookie: `visitor` is a one-way fingerprint made with a random key of the day that is deleted when
-/// the day is over, so a visitor is counted once a day and cannot be followed from one day to the next. Kept 400 days.
+/// One page seen, for the admin page's numbers, map and Traffic view (lib/visits/visit.ts has the rules). No internet
+/// address and no cookie: `visitor` is a one-way fingerprint made with a random key of the day that is deleted when the
+/// day is over, so a visitor who is not signed in is counted once a day and cannot be followed from one day to the
+/// next. A signed-in person's visits keep their account (`userId`), on the owner's choice of 2026-11-27, so the admin
+/// Traffic view can say who did what. Kept 400 days.
 model Visit {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -93,6 +95,25 @@ model Visit {
   source    String
   /// The owner (an admin) was signed in: their visits are left out of the numbers.
   own       Boolean  @default(false)
+  /// Someone was signed in.
+  signedIn  Boolean  @default(false)
+  /// The signed-in person's account (Clerk user id). Only when signed in; never for a visitor who is not.
+  userId    String?
+  /// "phone", "tablet" or "computer", read from the browser's name; the browser's name itself is never kept.
+  device    String?
+  /// A short name for the browser or app: "Safari", "Chrome", "Facebook app"…
+  browser   String?
+  /// The link's campaign tags (utm_*), on the first page of a visit only, short and cleaned. The rest of the query
+  /// string is never kept.
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+  /// The network whose click id the link carried ("facebook" for fbclid, "google" for gclid…): never the id.
+  clickFrom String?
+  /// The link carried a click id only paid ads get (gclid, msclkid, ttclid…; not Facebook's fbclid, which Facebook
+  /// adds to every link): only that it did, never the id.
+  adClick   Boolean  @default(false)
   /// Host of the site the visitor came from, when it was another site.
   referrer  String?
   /// What Vercel reads from the internet address: the country (ISO 3166), the region's code, the city, and the
@@ -106,6 +127,7 @@ model Visit {
   @@index([createdAt])
   @@index([visitor])
   @@index([source])
+  @@index([userId])
 }
 
 /// What a data provider answered, kept so the same question is not paid for
